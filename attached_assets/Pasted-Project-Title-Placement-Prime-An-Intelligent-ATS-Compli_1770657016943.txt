@@ -1,0 +1,296 @@
+Project Title
+
+Placement Prime – An Intelligent ATS-Compliant Resume Enhancer and Personalized Placement Preparation Platform
+
+🎯 Objective
+
+Build a web-based intelligent placement platform called Placement Prime that helps students and job seekers:
+
+Optimize resumes for ATS compliance
+
+Generate job-specific LaTeX resumes
+
+Receive ATS match scores
+
+Get job recommendations scraped/fetched from major job portals
+
+Track job applications
+
+Practice mock interviews (future scope)
+
+The system must follow modern ATS logic, semantic similarity, and NLP-based analysis as described in the research document.
+🔐 Authentication Pages
+1. Login Page
+
+Email
+
+Password
+
+Login button
+
+Redirect to Dashboard on success
+
+2. Signup Page
+
+Full Name
+
+Email
+
+Password
+
+Confirm Password
+
+Create Account button
+
+Authentication can be implemented using Firebase Auth / Supabase Auth / JWT-based custom auth
+🧭 Dashboard Layout
+
+Sidebar Navigation:
+
+Resume Enhancer (Main Page)
+
+Job Application Tracker
+
+Mock Interviews
+
+Pages 2 and 3 should exist but can remain blank placeholders for now.
+
+🧠 Resume Enhancer Portal (CORE FEATURE)
+📥 Input Section (Two Side-by-Side Boxes)
+🔹 Left Input Box – Resume Input
+
+Allow the user to choose one of the following:
+
+Upload Resume (PDF / DOCX)
+
+Upload LaTeX Resume Code
+
+Toggle option between:
+
+“Upload Resume File”
+
+“Paste LaTeX Code”
+
+🔹 Right Input Box – Job Description / Prompt
+
+Large text area
+
+User pastes:
+
+Job Description
+OR
+
+Custom prompt like
+“Optimize my resume for a Backend Java Developer role at a product-based company”
+
+⚙️ Backend Processing (LLM-Powered)
+🔧 Backend Stack
+
+FastAPI / Node.js
+
+NLP pipeline
+
+Vector similarity logic
+
+Free-tier LLM integration
+
+🤖 LLM Requirement (FREE TIER ONLY)
+
+Use any free or open-source LLM, such as:
+
+Groq (LLaMA-based free tier)
+
+OpenAI free-tier compatible logic
+
+HuggingFace Inference API (free models)
+
+Local LLM fallback (optional)
+
+🧩 Processing Logic
+
+Resume Parsing
+
+Extract skills, education, experience, projects
+
+Handle PDF/DOCX/LaTeX input
+
+Job Description Parsing
+
+Extract required skills, role keywords, tools, experience level
+
+Semantic Matching
+
+Use embeddings (Sentence Transformers or equivalent)
+
+Compute similarity between:
+
+Resume ↔ Job Description
+
+ATS Score Generation
+Output:
+
+Overall ATS Score (0–100)
+
+Section-wise score:
+
+Skills Match
+
+Experience Match
+
+Education Match
+
+Keyword Density
+
+Formatting Compatibility
+
+Resume Optimization
+
+Inject missing keywords
+
+Preserve original content meaning
+
+Ensure ATS-friendly formatting
+
+Generate optimized LaTeX resume
+
+📤 Output Section
+📄 Generated Resume
+
+Display LaTeX Code Output
+
+Buttons:
+
+✅ Copy LaTeX Code
+
+⬇️ Download .tex file
+
+📊 ATS Score Display
+
+Circular or bar-based score visualization
+
+Highlight:
+
+Strong areas
+
+Improvement gaps
+
+Missing keywords
+
+💼 Job Recommendation Section (Below Output)
+🔍 Job Fetching Sources
+
+Fetch relevant jobs based on resume + JD using:
+
+LinkedIn
+
+Indeed
+
+Naukri
+
+Glassdoor
+
+Internshala
+
+Can be implemented using:
+
+Public APIs (where allowed)
+
+Scraped job datasets
+
+Proxy job-listing APIs
+
+Mock API for initial version
+
+🧠 Job Matching Logic
+
+LLM + semantic similarity should:
+
+Match job descriptions with:
+
+Resume skills
+
+Experience
+
+Education
+
+Categorize jobs as:
+
+🔥 Strong Match
+
+✅ Good Match
+
+📌 Job Card UI
+
+Each job card should show:
+
+Job Title
+
+Company Name
+
+Platform Source (LinkedIn / Indeed etc.)
+
+Match Level (Strong / Good)
+
+Matched Skills
+
+Missing Skills (optional)
+
+📁 Page 2: Job Application Tracker (Placeholder)
+
+Page exists
+
+Title only
+
+“Coming Soon” message
+
+🎤 Page 3: Mock Interviews (Placeholder)
+
+Page exists
+
+Title only
+
+“Coming Soon” message
+
+🗄️ Database Design (Basic)
+
+Tables:
+
+Users
+
+Uploaded Resumes
+
+Generated Resumes
+
+ATS Scores
+
+Job Recommendations
+
+☁️ Deployment Expectations
+
+Frontend: Vercel / Netlify
+
+Backend: Render / Railway / Cloud Run
+
+Database: PostgreSQL / Firebase
+
+🧠 Key AI Concepts to Emphasize
+
+ATS Compliance
+
+Semantic Similarity (not just keyword match)
+
+Resume Structure Preservation
+
+Job-Specific Customization
+
+Scalable, real-time processing
+
+✅ Final Notes
+
+Focus on clean UI
+
+Explainability of ATS score is important
+
+LaTeX output must be copyable
+
+LLM usage must stay within free-tier limits
