@@ -1,9 +1,9 @@
 {
+    "buildCommand": "npm run build",
+    "outputDirectory": "dist/public",
+    "installCommand": "npm ci",
+    "framework": "vite",
     "rewrites": [
-        {
-            "source": "/api/(.*)",
-            "destination": "/api/index.ts"
-        },
         {
             "source": "/(.*)",
             "destination": "/index.html"
