@@ -1,52 +1,83 @@
-import { pgTable, text, serial, integer, boolean, timestamp, jsonb } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-export const users = pgTable("users", {
-  id: serial("id").primaryKey(),
-  firebaseUid: text("firebase_uid").unique().notNull(),
-  email: text("email").notNull(),
-  name: text("name"),
-  createdAt: timestamp("created_at").defaultNow(),
+export const insertUserSchema = z.object({
+  firebaseUid: z.string(),
+  email: z.string().email(),
+  name: z.string().optional(),
 });
 
-export const resumes = pgTable("resumes", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id),
-  title: text("title").notNull(),
-  content: text("content").notNull(), // Extracted text or LaTeX
-  originalFilename: text("original_filename"),
-  atsScore: integer("ats_score"),
-  analysisJson: jsonb("analysis_json"), // Store full analysis structure
-  latexContent: text("latex_content"), // The optimized LaTeX code
-  createdAt: timestamp("created_at").defaultNow(),
+export const userSchema = insertUserSchema.extend({
+  id: z.string(),
+  createdAt: z.date(),
 });
 
-export const jobs = pgTable("jobs", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id), // User who saved/viewed this job
-  title: text("title").notNull(),
-  company: text("company").notNull(),
-  description: text("description").notNull(),
-  source: text("source"), // LinkedIn, Indeed, Mock, etc.
-  url: text("url"),
-  matchScore: integer("match_score"), // Score relative to the user's active resume
-  status: text("status").default("new"), // new, applied, rejected, interview
-  createdAt: timestamp("created_at").defaultNow(),
+export const insertResumeSchema = z.object({
+  userId: z.string(),
+  title: z.string(),
+  content: z.string(),
+  originalFilename: z.string().optional(),
 });
 
-// Schemas
-export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
-export const insertResumeSchema = createInsertSchema(resumes).omit({ id: true, createdAt: true, atsScore: true, analysisJson: true, latexContent: true });
-export const insertJobSchema = createInsertSchema(jobs).omit({ id: true, createdAt: true });
+export const resumeSchema = insertResumeSchema.extend({
+  id: z.string(),
+  atsScore: z.number().optional(),
+  analysisJson: z.any().optional(),
+  latexContent: z.string().optional(),
+  createdAt: z.date(),
+});
+
+export const insertJobSchema = z.object({
+  userId: z.string(),
+  title: z.string(),
+  company: z.string(),
+  description: z.string(),
+  source: z.string().optional(),
+  url: z.string().optional(),
+  matchScore: z.number().optional(),
+  status: z.string().default("new"),
+});
+
+export const jobSchema = insertJobSchema.extend({
+  id: z.string(),
+  createdAt: z.date(),
+});
+
+// Chat schemas
+export const insertConversationSchema = z.object({
+  title: z.string(),
+});
+
+export const conversationSchema = insertConversationSchema.extend({
+  id: z.string(),
+  createdAt: z.date(),
+});
+
+export const insertMessageSchema = z.object({
+  conversationId: z.string(),
+  role: z.string(), // 'user' or 'system' or 'assistant'
+  content: z.string(),
+});
+
+export const messageSchema = insertMessageSchema.extend({
+  id: z.string(),
+  createdAt: z.date(),
+});
 
 // Types
-export type User = typeof users.$inferSelect;
+export type User = z.infer<typeof userSchema>;
 export type InsertUser = z.infer<typeof insertUserSchema>;
-export type Resume = typeof resumes.$inferSelect;
+
+export type Resume = z.infer<typeof resumeSchema>;
 export type InsertResume = z.infer<typeof insertResumeSchema>;
-export type Job = typeof jobs.$inferSelect;
+
+export type Job = z.infer<typeof jobSchema>;
 export type InsertJob = z.infer<typeof insertJobSchema>;
+
+export type Conversation = z.infer<typeof conversationSchema>;
+export type InsertConversation = z.infer<typeof insertConversationSchema>;
+
+export type Message = z.infer<typeof messageSchema>;
+export type InsertMessage = z.infer<typeof insertMessageSchema>;
 
 // API Types
 export type AnalyzeResumeRequest = {
@@ -60,3 +91,10 @@ export type AnalyzeResumeResponse = {
   feedback: string;
   optimizedLatex: string;
 };
+
+// Start Exposing schemas for use in routes
+export const users = { $inferSelect: {} as User };
+export const resumes = { $inferSelect: {} as Resume };
+export const jobs = { $inferSelect: {} as Job };
+export const conversations = { $inferSelect: {} as Conversation };
+export const messages = { $inferSelect: {} as Message };

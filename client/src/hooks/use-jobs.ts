@@ -51,3 +51,27 @@ export function useRecommendJobs() {
     },
   });
 }
+
+export function useUpdateJob() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<InsertJob> }) => {
+      const res = await fetch(api.jobs.update.path.replace(":id", id), {
+        method: api.jobs.update.method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to update job");
+      return api.jobs.update.responses[200].parse(await res.json());
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [api.jobs.list.path] });
+      toast({ title: "Job Updated", description: "Job details have been updated." });
+    },
+    onError: (err) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+}

@@ -13,7 +13,7 @@ export function useResumes() {
   });
 }
 
-export function useResume(id: number) {
+export function useResume(id: string) {
   return useQuery({
     queryKey: [api.resumes.get.path, id],
     queryFn: async () => {
@@ -61,7 +61,7 @@ export function useAnalyzeResume() {
   const { toast } = useToast();
 
   return useMutation({
-    mutationFn: async (data: { resumeId: number; jobDescription: string }) => {
+    mutationFn: async (data: { resumeId: string; jobDescription: string }) => {
       const res = await fetch(api.resumes.analyze.path, {
         method: api.resumes.analyze.method,
         headers: { "Content-Type": "application/json" },
