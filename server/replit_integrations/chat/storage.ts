@@ -1,43 +1,85 @@
-import { db } from "../../db";
-import { conversations, messages } from "@shared/schema";
-import { eq, desc } from "drizzle-orm";
+import { db } from "../../lib/firebase";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
+  orderBy,
+  limit,
+  Timestamp
+} from "firebase/firestore";
+import { conversations, messages, Conversation, Message } from "@shared/schema";
 
 export interface IChatStorage {
-  getConversation(id: number): Promise<typeof conversations.$inferSelect | undefined>;
-  getAllConversations(): Promise<(typeof conversations.$inferSelect)[]>;
-  createConversation(title: string): Promise<typeof conversations.$inferSelect>;
-  deleteConversation(id: number): Promise<void>;
-  getMessagesByConversation(conversationId: number): Promise<(typeof messages.$inferSelect)[]>;
-  createMessage(conversationId: number, role: string, content: string): Promise<typeof messages.$inferSelect>;
+  getConversation(id: string): Promise<Conversation | undefined>;
+  getAllConversations(): Promise<Conversation[]>;
+  createConversation(title: string): Promise<Conversation>;
+  deleteConversation(id: string): Promise<void>;
+  getMessagesByConversation(conversationId: string): Promise<Message[]>;
+  createMessage(conversationId: string, role: string, content: string): Promise<Message>;
+}
+
+// Helper function
+function convertDate(data: any): any {
+  if (!data) return data;
+  const newData = { ...data };
+  if (newData.createdAt && newData.createdAt instanceof Timestamp) {
+    newData.createdAt = newData.createdAt.toDate();
+  }
+  return newData;
 }
 
 export const chatStorage: IChatStorage = {
-  async getConversation(id: number) {
-    const [conversation] = await db.select().from(conversations).where(eq(conversations.id, id));
-    return conversation;
+  async getConversation(id: string): Promise<Conversation | undefined> {
+    const docRef = doc(db, "conversations", id);
+    const docSnap = await getDoc(docRef);
+    if (!docSnap.exists()) return undefined;
+    return { id: docSnap.id, ...convertDate(docSnap.data()) } as Conversation;
   },
 
-  async getAllConversations() {
-    return db.select().from(conversations).orderBy(desc(conversations.createdAt));
+  async getAllConversations(): Promise<Conversation[]> {
+    const conversationsRef = collection(db, "conversations");
+    const q = query(conversationsRef, orderBy("createdAt", "desc"));
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => ({ id: doc.id, ...convertDate(doc.data()) } as Conversation));
   },
 
-  async createConversation(title: string) {
-    const [conversation] = await db.insert(conversations).values({ title }).returning();
-    return conversation;
+  async createConversation(title: string): Promise<Conversation> {
+    const conversationsRef = collection(db, "conversations");
+    const now = new Date();
+    const docRef = await addDoc(conversationsRef, { title, createdAt: now });
+    return { id: docRef.id, title, createdAt: now } as Conversation;
   },
 
-  async deleteConversation(id: number) {
-    await db.delete(messages).where(eq(messages.conversationId, id));
-    await db.delete(conversations).where(eq(conversations.id, id));
+  async deleteConversation(id: string): Promise<void> {
+    // First delete messages
+    const messagesRef = collection(db, "messages");
+    const q = query(messagesRef, where("conversationId", "==", id));
+    const querySnapshot = await getDocs(q);
+    const deletePromises = querySnapshot.docs.map(doc => deleteDoc(doc.ref));
+    await Promise.all(deletePromises);
+
+    // Then delete conversation
+    await deleteDoc(doc(db, "conversations", id));
   },
 
-  async getMessagesByConversation(conversationId: number) {
-    return db.select().from(messages).where(eq(messages.conversationId, conversationId)).orderBy(messages.createdAt);
+  async getMessagesByConversation(conversationId: string): Promise<Message[]> {
+    const messagesRef = collection(db, "messages");
+    const q = query(messagesRef, where("conversationId", "==", conversationId), orderBy("createdAt", "asc"));
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => ({ id: doc.id, ...convertDate(doc.data()) } as Message));
   },
 
-  async createMessage(conversationId: number, role: string, content: string) {
-    const [message] = await db.insert(messages).values({ conversationId, role, content }).returning();
-    return message;
+  async createMessage(conversationId: string, role: string, content: string): Promise<Message> {
+    const messagesRef = collection(db, "messages");
+    const now = new Date();
+    const docRef = await addDoc(messagesRef, { conversationId, role, content, createdAt: now });
+    return { id: docRef.id, conversationId, role, content, createdAt: now } as Message;
   },
 };
-

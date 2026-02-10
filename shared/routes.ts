@@ -47,7 +47,7 @@ export const api = {
       method: 'POST' as const,
       path: '/api/resumes/analyze' as const,
       input: z.object({
-        resumeId: z.number(),
+        resumeId: z.string(),
         jobDescription: z.string(),
       }),
       responses: {
@@ -95,10 +95,19 @@ export const api = {
       method: 'POST' as const,
       path: '/api/jobs/recommend' as const,
       input: z.object({
-        resumeId: z.number(),
+        resumeId: z.string(),
       }),
       responses: {
         200: z.array(z.custom<typeof jobs.$inferSelect>()),
+      },
+    },
+    update: {
+      method: 'PATCH' as const,
+      path: '/api/jobs/:id' as const,
+      input: insertJobSchema.partial(),
+      responses: {
+        200: z.custom<typeof jobs.$inferSelect>(),
+        404: errorSchemas.notFound,
       },
     },
   }

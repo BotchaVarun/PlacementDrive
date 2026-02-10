@@ -2,13 +2,46 @@ import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
+import { insertUserSchema, insertResumeSchema, insertJobSchema } from "@shared/schema";
 import { z } from "zod";
 import { openai } from "./replit_integrations/image/client"; // Re-using the OpenAI client from the integration
+import multer from "multer";
+
+import { PDFParse } from "pdf-parse";
+import Groq from "groq-sdk";
+
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+
+// Configure multer for memory storage
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+});
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+
+  // PDF Upload Route
+  app.post("/api/resumes/upload-pdf", upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      if (req.file.mimetype !== "application/pdf") {
+        return res.status(400).json({ message: "Only PDF files are allowed" });
+      }
+
+      const pdfParser = new PDFParse({ data: req.file.buffer });
+      const data = await pdfParser.getText();
+      res.json({ text: data.text });
+    } catch (error) {
+      console.error("PDF Parse error:", error);
+      res.status(500).json({ message: "Failed to parse PDF" });
+    }
+  });
 
   // Users Sync
   app.post(api.users.sync.path, async (req, res) => {
@@ -33,25 +66,30 @@ export async function registerRoutes(
   app.get(api.resumes.list.path, async (req, res) => {
     // In a real app, we'd get userId from auth middleware
     // For now, we'll return all or filter by query if provided
-    const resumes = await storage.getUserResumes(1); // Mock user ID 1
+    const resumes = await storage.getUserResumes("1"); // Mock user ID 1
     res.json(resumes);
   });
 
   app.post(api.resumes.create.path, async (req, res) => {
     try {
-      const input = api.resumes.create.input.parse(req.body);
+      // Inject mock user ID
+      const user = await storage.getUserByFirebaseUid("mock-user-uid");
+      if (!user) {
+        return res.status(500).json({ message: "Mock user not found" });
+      }
+      const input = api.resumes.create.input.parse({ ...req.body, userId: user.id });
       const resume = await storage.createResume(input);
       res.status(201).json(resume);
     } catch (err) {
       if (err instanceof z.ZodError) {
-        return res.status(400).json({ message: err.errors[0].message });
+        return res.status(400).json({ message: `${err.errors[0].path.join('.')}: ${err.errors[0].message}` });
       }
       throw err;
     }
   });
 
   app.get(api.resumes.get.path, async (req, res) => {
-    const resume = await storage.getResume(Number(req.params.id));
+    const resume = await storage.getResume(req.params.id);
     if (!resume) return res.status(404).json({ message: "Resume not found" });
     res.json(resume);
   });
@@ -89,13 +127,33 @@ export async function registerRoutes(
         }
       `;
 
-      const completion = await openai.chat.completions.create({
-        model: "gpt-5.1",
+      // GROQ API IMPLEMENTATION
+      const completion = await groq.chat.completions.create({
+        model: "openai/gpt-oss-120b",
         messages: [{ role: "user", content: prompt }],
-        response_format: { type: "json_object" },
+        temperature: 1,
+        max_completion_tokens: 8192,
+        top_p: 1,
+        stop: null,
+        // @ts-ignore - reasoning_effort might not be in types yet
+        reasoning_effort: "medium",
+        stream: false
       });
 
-      const result = JSON.parse(completion.choices[0].message.content || "{}");
+      const content = completion.choices[0]?.message?.content || "{}";
+      let result;
+
+      // Attempt to find JSON in the response if it includes markdown
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      const jsonString = jsonMatch ? jsonMatch[0] : content;
+
+      try {
+        result = JSON.parse(jsonString);
+      } catch (e) {
+        console.error("Failed to parse JSON from Groq:", content);
+        // Fallback or throw
+        throw new Error("Invalid JSON response from AI");
+      }
 
       // Save result
       const updatedResume = await storage.updateResumeAnalysis(
@@ -110,7 +168,7 @@ export async function registerRoutes(
         sectionScores: result.sectionScores,
         missingKeywords: result.missingKeywords,
         feedback: result.feedback,
-        optimizedLatex: result.optimizedLatex,
+        optimizedLatex: result.optimizedLatex || "",
       });
 
     } catch (err) {
@@ -126,9 +184,23 @@ export async function registerRoutes(
   });
 
   app.post(api.jobs.create.path, async (req, res) => {
-    const input = api.jobs.create.input.parse(req.body);
+    const user = await storage.getUserByFirebaseUid("mock-user-uid");
+    if (!user) return res.status(500).json({ message: "Mock user not found" });
+    const input = api.jobs.create.input.parse({ ...req.body, userId: user.id });
     const job = await storage.createJob(input);
     res.status(201).json(job);
+  });
+
+  app.patch(api.jobs.update.path, async (req, res) => {
+    const id = req.params.id;
+    const input = api.jobs.update.input.parse(req.body);
+    try {
+      const job = await storage.updateJob(id, input);
+      res.json(job);
+    } catch (error) {
+      console.error("Update job error:", error);
+      res.status(404).json({ message: "Job not found" });
+    }
   });
 
   app.post(api.jobs.recommend.path, async (req, res) => {
@@ -160,7 +232,10 @@ export async function registerRoutes(
 
   // Seed Data
   async function seedDatabase() {
-    let user = await storage.getUser(1);
+    // Check if user exists by some criteria or just try to get a known mock ID if we want
+    // But with Firestore auto-ids, we might need to search by email/uid.
+    let user = await storage.getUserByFirebaseUid("mock-user-uid");
+
     if (!user) {
       // Create a mock user for seeding
       user = await storage.createUser({

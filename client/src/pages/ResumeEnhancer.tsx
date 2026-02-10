@@ -7,15 +7,16 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
-import { 
-  Loader2, 
-  UploadCloud, 
-  FileText, 
-  CheckCircle2, 
-  AlertTriangle, 
+import {
+  Loader2,
+  UploadCloud,
+  FileText,
+  CheckCircle2,
+  AlertTriangle,
   Copy,
   Download,
-  ArrowRight
+  ArrowRight,
+  Sparkles
 } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { useToast } from "@/hooks/use-toast";
@@ -27,7 +28,9 @@ export default function ResumeEnhancer() {
   const [jobDescription, setJobDescription] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
-  
+  const [isUploading, setIsUploading] = useState(false);
+  const [activeTab, setActiveTab] = useState("paste");
+
   const createResume = useCreateResume();
   const analyzeResume = useAnalyzeResume();
   const { toast } = useToast();
@@ -53,12 +56,50 @@ export default function ResumeEnhancer() {
         resumeId: resume.id,
         jobDescription,
       });
-      
+
       setAnalysisResult(result);
     } catch (error) {
       // Error handled by hooks
     } finally {
       setIsAnalyzing(false);
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.type !== "application/pdf") {
+      toast({ title: "Invalid file", description: "Please upload a PDF file.", variant: "destructive" });
+      return;
+    }
+
+    setIsUploading(true);
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const res = await fetch("/api/resumes/upload-pdf", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ message: "Upload failed" }));
+        throw new Error(errData.message || "Upload failed");
+      }
+
+      const data = await res.json();
+      setResumeContent(data.text);
+      setResumeTitle(file.name.replace(".pdf", ""));
+      toast({ title: "Success", description: "Resume extracted successfully. Check the content and click Analyze." });
+      setActiveTab("paste");
+    } catch (error: any) {
+      toast({ title: "Upload Failed", description: error.message, variant: "destructive" });
+    } finally {
+      setIsUploading(false);
+      // Reset input value
+      e.target.value = "";
     }
   };
 
@@ -71,14 +112,14 @@ export default function ResumeEnhancer() {
             <p className="text-muted-foreground">Tailor your resume to the job description for maximum impact.</p>
           </div>
           {analysisResult && (
-             <Button onClick={() => { setAnalysisResult(null); setResumeContent(""); setJobDescription(""); }} variant="outline">
-               Start New
-             </Button>
+            <Button onClick={() => { setAnalysisResult(null); setResumeContent(""); setJobDescription(""); }} variant="outline">
+              Start New
+            </Button>
           )}
         </div>
 
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-0">
-          
+
           {/* LEFT COLUMN: INPUTS */}
           <div className="flex flex-col gap-6 overflow-y-auto pr-2 pb-4">
             <Card className="flex-1 shadow-sm border-border/60">
@@ -87,29 +128,50 @@ export default function ResumeEnhancer() {
                 <CardDescription>Paste your current resume content or LaTeX code.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <Input 
-                  placeholder="Resume Title (e.g. Frontend Dev Resume)" 
+                <Input
+                  placeholder="Resume Title (e.g. Frontend Dev Resume)"
                   value={resumeTitle}
                   onChange={(e) => setResumeTitle(e.target.value)}
                 />
-                <Tabs defaultValue="paste" className="w-full">
+                <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                   <TabsList className="grid w-full grid-cols-2">
                     <TabsTrigger value="paste">Paste Text / LaTeX</TabsTrigger>
-                    <TabsTrigger value="upload" disabled>Upload File (Pro)</TabsTrigger>
+                    <TabsTrigger value="upload">Upload File (PDF)</TabsTrigger>
                   </TabsList>
                   <TabsContent value="paste" className="mt-4">
-                    <Textarea 
+                    <Textarea
                       className="min-h-[300px] font-mono text-sm leading-relaxed"
-                      placeholder="\documentclass{article}..." 
+                      placeholder="\documentclass{article}..."
                       value={resumeContent}
                       onChange={(e) => setResumeContent(e.target.value)}
                     />
                   </TabsContent>
                   <TabsContent value="upload">
-                     <div className="h-[300px] border-2 border-dashed border-border rounded-xl flex flex-col items-center justify-center text-muted-foreground bg-secondary/20">
-                       <UploadCloud className="h-10 w-10 mb-2 opacity-50" />
-                       <p>File upload coming soon.</p>
-                     </div>
+                    <div className="mt-4">
+                      <label className="cursor-pointer">
+                        <input
+                          type="file"
+                          accept=".pdf"
+                          className="hidden"
+                          onChange={handleFileUpload}
+                          disabled={isUploading}
+                        />
+                        <div className={`h-[300px] border-2 border-dashed border-border rounded-xl flex flex-col items-center justify-center text-muted-foreground bg-secondary/20 hover:bg-secondary/30 transition-colors ${isUploading ? 'opacity-50' : ''}`}>
+                          {isUploading ? (
+                            <>
+                              <Loader2 className="h-10 w-10 mb-2 animate-spin text-primary" />
+                              <p>Extracting text from PDF...</p>
+                            </>
+                          ) : (
+                            <>
+                              <UploadCloud className="h-10 w-10 mb-2" />
+                              <p className="font-medium">Click to upload PDF</p>
+                              <p className="text-xs text-muted-foreground mt-1">Text will be extracted automatically</p>
+                            </>
+                          )}
+                        </div>
+                      </label>
+                    </div>
                   </TabsContent>
                 </Tabs>
               </CardContent>
@@ -121,13 +183,13 @@ export default function ResumeEnhancer() {
                 <CardDescription>Paste the job description you want to target.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <Textarea 
+                <Textarea
                   className="min-h-[200px] text-sm"
-                  placeholder="Paste JD here..." 
+                  placeholder="Paste JD here..."
                   value={jobDescription}
                   onChange={(e) => setJobDescription(e.target.value)}
                 />
-                <Button 
+                <Button
                   className="w-full h-12 text-lg shadow-xl shadow-primary/20 hover:shadow-primary/30 transition-all"
                   onClick={handleAnalyze}
                   disabled={isAnalyzing}
@@ -151,9 +213,9 @@ export default function ResumeEnhancer() {
           <div className="flex flex-col gap-6 overflow-y-auto pb-4 h-full">
             <AnimatePresence mode="wait">
               {isAnalyzing ? (
-                <motion.div 
-                  initial={{ opacity: 0 }} 
-                  animate={{ opacity: 1 }} 
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   className="h-full flex flex-col items-center justify-center p-8 text-center space-y-6 bg-card/50 rounded-2xl border border-dashed border-border"
                 >
@@ -169,8 +231,8 @@ export default function ResumeEnhancer() {
                   </div>
                 </motion.div>
               ) : analysisResult ? (
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }} 
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   className="space-y-6"
                 >
@@ -209,10 +271,10 @@ export default function ResumeEnhancer() {
                         </div>
                       </div>
                       <div className="space-y-4">
-                         <ScoreBar label="Skills Match" score={analysisResult.sectionScores.skills} />
-                         <ScoreBar label="Experience Impact" score={analysisResult.sectionScores.experience} />
-                         <ScoreBar label="Formatting" score={analysisResult.sectionScores.formatting} />
-                         <ScoreBar label="Education" score={analysisResult.sectionScores.education} />
+                        <ScoreBar label="Skills Match" score={analysisResult.sectionScores.skills} />
+                        <ScoreBar label="Experience Impact" score={analysisResult.sectionScores.experience} />
+                        <ScoreBar label="Formatting" score={analysisResult.sectionScores.formatting} />
+                        <ScoreBar label="Education" score={analysisResult.sectionScores.education} />
                       </div>
                     </CardContent>
                   </Card>
@@ -260,9 +322,9 @@ export default function ResumeEnhancer() {
                         <CardTitle className="text-base">Optimized LaTeX Code</CardTitle>
                       </div>
                       <div className="flex gap-2">
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={() => {
                             navigator.clipboard.writeText(analysisResult.optimizedLatex);
                             toast({ title: "Copied!", description: "LaTeX code copied to clipboard." });
