@@ -116,7 +116,7 @@ export async function registerRoutes(
         CRITICAL ASSESSMENT INSTRUCTIONS:
         1. **Skill Matching**: Meticulously compare the skills required in the Job Description with those present in the Resume. Identify exactly which required skills are matching and which are missing.
         2. **Alignment Analysis**: Evaluate how well the candidate's experience and project descriptions align with the core responsibilities and requirements of the job.
-        3. **Contextual Relevance**: Ensure that the "missingKeywords" you identify are substantive technical or domain-specific skills found in the JD but absent from the Resume, not just generic terms.
+        4. **Force Optimization**: You MUST provide an `optimizedLatex` version of the resume. Even if the resume is strong, improve its impact, action verbs, and alignment with the JD. Do not return an empty string for `optimizedLatex`.
 
         Provide the output in valid JSON format with the following structure:
         {
@@ -154,7 +154,8 @@ export async function registerRoutes(
       try {
         result = JSON.parse(jsonString);
       } catch (e) {
-        console.error("Failed to parse JSON from Groq:", content);
+        console.error("Failed to parse JSON from Groq. Raw content:", content);
+        console.error("JSON Error:", e);
         // Fallback or throw
         throw new Error("Invalid JSON response from AI");
       }
