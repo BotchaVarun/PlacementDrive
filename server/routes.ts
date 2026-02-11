@@ -141,8 +141,6 @@ export async function registerRoutes(
         max_completion_tokens: 8192,
         top_p: 1,
         stop: null,
-        // @ts-ignore - reasoning_effort might not be in types yet
-        reasoning_effort: "medium",
         stream: false
       });
 
