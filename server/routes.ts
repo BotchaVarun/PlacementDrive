@@ -126,10 +126,13 @@ export async function registerRoutes(
         CRITICAL OUTPUT INSTRUCTIONS:
         1. **Skill Matching**: Meticulously compare the skills required in the Job Description with those present in the Resume. Identify exactly which required skills are matching and which are missing.
         2. **Alignment Analysis**: Evaluate how well the candidate's experience and project descriptions align with the core responsibilities and requirements of the job.
-        3. **Force Optimization**: You MUST provide an 'optimizedLatex' version of the resume deeply embedded in the JSON response. Even if the resume is strong, improve its impact, action verbs, and alignment with the JD. Do not return an empty string for 'optimizedLatex'.
-        4. **Format**: Return a SINGLE valid JSON object. Do not include markdown formatting or explanations outside the JSON object.
+        4. **Force Optimization**: You MUST provide an 'optimizedLatex' version of the resume. Even if the resume is strong, improve its impact, action verbs, and alignment with the JD.
+        5. **Format**:
+           - First, provide the analysis in a valid JSON object within a \`\`\`json code block.
+           - Second, provide the full optimized LaTeX code in a separate \`\`\`latex code block.
+           - DO NOT include the "optimizedLatex" field in the JSON object.
 
-        Provide the output in valid JSON format with the following structure:
+        Provide the output in valid JSON format with the following structure for the first block:
         {
           "atsScore": number (0-100),
           "sectionScores": {
@@ -139,8 +142,7 @@ export async function registerRoutes(
             "formatting": number (0-100)
           },
           "missingKeywords": string[],
-          "feedback": "Detailed feedback string",
-          "optimizedLatex": "FULL_LATEX_CODE_HERE_ESCAPED_DO_NOT_LEAVE_EMPTY"
+          "feedback": "Detailed feedback string"
         }
       `;
 
@@ -157,30 +159,46 @@ export async function registerRoutes(
 
       const content = completion.choices[0]?.message?.content || "{}";
       let result;
+      let optimizedLatex = "";
 
-      // Robust JSON extraction
-      // 1. Try to extract from markdown code blocks first
-      const codeBlockMatch = content.match(/```json\n([\s\S]*?)\n```/);
-      if (codeBlockMatch) {
+      // Robust Parsing Strategy: Separate Blocks
+
+      // 1. Extract JSON
+      const jsonBlockMatch = content.match(/```json\n([\s\S]*?)\n```/);
+      if (jsonBlockMatch) {
         try {
-          result = JSON.parse(codeBlockMatch[1]);
+          result = JSON.parse(jsonBlockMatch[1]);
         } catch (e) {
           console.error("Failed to parse JSON from code block:", e);
         }
       }
 
+      // Fallback for JSON if no code block
       if (!result) {
-        // 2. Fallback: Find the first '{' and the last '}'
         const firstBrace = content.indexOf('{');
         const lastBrace = content.lastIndexOf('}');
-
         if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+          // We need to be careful not to capture the latex block if it has braces
+          // But usually the JSON is first.
           const jsonString = content.substring(firstBrace, lastBrace + 1);
           try {
             result = JSON.parse(jsonString);
-          } catch (e) {
-            // failed
-          }
+          } catch (e) { /* ignore */ }
+        }
+      }
+
+      // 2. Extract LaTeX
+      const latexBlockMatch = content.match(/```latex\n([\s\S]*?)\n```/);
+      if (latexBlockMatch) {
+        optimizedLatex = latexBlockMatch[1];
+      } else {
+        // Fallback: try to find \documentclass until end of string or next code block
+        const latexStart = content.indexOf('\\documentclass');
+        if (latexStart !== -1) {
+          // rough extraction if code block is missing
+          optimizedLatex = content.substring(latexStart);
+          // Clean up if there are trailing backticks
+          optimizedLatex = optimizedLatex.replace(/```$/, '');
         }
       }
 
@@ -189,12 +207,15 @@ export async function registerRoutes(
         throw new Error("Invalid JSON response from AI");
       }
 
+      // Merge latex into result
+      result.optimizedLatex = optimizedLatex;
+
       // Save result
       const updatedResume = await storage.updateResumeAnalysis(
         resumeId,
         result.atsScore || 0,
         result,
-        result.optimizedLatex || ""
+        optimizedLatex || ""
       );
 
       res.json({
