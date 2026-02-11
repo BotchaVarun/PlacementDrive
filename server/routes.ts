@@ -246,6 +246,7 @@ export async function registerRoutes(
       });
     }
 
+    /* Default jobs removed as per user request
     const jobs = await storage.getJobs();
     if (jobs.length === 0) {
       await storage.createJob({
@@ -276,6 +277,7 @@ export async function registerRoutes(
         userId: user.id
       });
     }
+    */
   }
 
   await seedDatabase();
