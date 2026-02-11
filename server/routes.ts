@@ -11,6 +11,7 @@ const require = createRequire(import.meta.url);
 const pdfParse = require("pdf-parse");
 
 import Groq from "groq-sdk";
+import { checkAuth } from "./middleware/auth.js";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -64,20 +65,16 @@ export async function registerRoutes(
   });
 
   // Resumes
-  app.get(api.resumes.list.path, async (req, res) => {
-    // In a real app, we'd get userId from auth middleware
-    // For now, we'll return all or filter by query if provided
-    const resumes = await storage.getUserResumes("1"); // Mock user ID 1
+  app.get(api.resumes.list.path, checkAuth, async (req, res) => {
+    const userId = req.user!.id;
+    const resumes = await storage.getUserResumes(userId);
     res.json(resumes);
   });
 
-  app.post(api.resumes.create.path, async (req, res) => {
+  app.post(api.resumes.create.path, checkAuth, async (req, res) => {
     try {
-      // Inject mock user ID
-      const user = await storage.getUserByFirebaseUid("mock-user-uid");
-      if (!user) {
-        return res.status(500).json({ message: "Mock user not found" });
-      }
+      const user = req.user!;
+      // Inject user ID from auth
       const input = api.resumes.create.input.parse({ ...req.body, userId: user.id });
       const resume = await storage.createResume(input);
       res.status(201).json(resume);
@@ -96,7 +93,7 @@ export async function registerRoutes(
   });
 
   // AI Analysis Endpoint
-  app.post(api.resumes.analyze.path, async (req, res) => {
+  app.post(api.resumes.analyze.path, checkAuth, async (req, res) => {
     try {
       const { resumeId, jobDescription } = api.resumes.analyze.input.parse(req.body);
       const resume = await storage.getResume(resumeId);
@@ -233,14 +230,15 @@ export async function registerRoutes(
   });
 
   // Jobs
-  app.get(api.jobs.list.path, async (req, res) => {
-    const jobs = await storage.getJobs();
+  app.get(api.jobs.list.path, checkAuth, async (req, res) => {
+    const userId = req.user!.id; // Authenticated user
+    const jobs = await storage.getUserJobs(userId);
     res.json(jobs);
   });
 
-  app.post(api.jobs.create.path, async (req, res) => {
-    const user = await storage.getUserByFirebaseUid("mock-user-uid");
-    if (!user) return res.status(500).json({ message: "Mock user not found" });
+  app.post(api.jobs.create.path, checkAuth, async (req, res) => {
+    // Authenticated user
+    const user = req.user!;
     const input = api.jobs.create.input.parse({ ...req.body, userId: user.id });
     const job = await storage.createJob(input);
     res.status(201).json(job);

@@ -2,15 +2,21 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@shared/routes";
 import { useToast } from "@/hooks/use-toast";
 import { InsertJob } from "@shared/schema";
+import { auth } from "@/lib/firebase";
 
 export function useJobs() {
   return useQuery({
     queryKey: [api.jobs.list.path],
     queryFn: async () => {
-      const res = await fetch(api.jobs.list.path);
+      const token = await auth.currentUser?.getIdToken();
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const res = await fetch(api.jobs.list.path, { headers });
       if (!res.ok) throw new Error("Failed to fetch jobs");
       return api.jobs.list.responses[200].parse(await res.json());
     },
+    enabled: !!auth.currentUser, // Only fetch when logged in
   });
 }
 
@@ -20,9 +26,13 @@ export function useCreateJob() {
 
   return useMutation({
     mutationFn: async (data: InsertJob) => {
+      const token = await auth.currentUser?.getIdToken();
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
       const res = await fetch(api.jobs.create.path, {
         method: api.jobs.create.method,
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify(data),
       });
       if (!res.ok) throw new Error("Failed to create job");
@@ -41,9 +51,13 @@ export function useCreateJob() {
 export function useRecommendJobs() {
   return useMutation({
     mutationFn: async (data: { resumeId: number }) => {
+      const token = await auth.currentUser?.getIdToken();
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
       const res = await fetch(api.jobs.recommend.path, {
         method: api.jobs.recommend.method,
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify(data),
       });
       if (!res.ok) throw new Error("Failed to fetch recommendations");
