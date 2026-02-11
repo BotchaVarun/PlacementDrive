@@ -1,4 +1,4 @@
-import { db } from "./lib/firebase"; // Use our new Firebase setup
+import { db } from "./lib/firebase.js"; // Use our new Firebase setup
 import {
   collection,
   doc,
@@ -19,7 +19,7 @@ import {
   Job, InsertJob,
   Conversation, InsertConversation,
   Message, InsertMessage
-} from "@shared/schema";
+} from "../shared/schema.js";
 
 export interface IStorage {
   // Users

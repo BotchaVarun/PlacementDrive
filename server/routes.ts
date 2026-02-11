@@ -1,10 +1,10 @@
 import type { Express } from "express";
 import type { Server } from "http";
-import { storage } from "./storage";
-import { api } from "@shared/routes";
-import { insertUserSchema, insertResumeSchema, insertJobSchema } from "@shared/schema";
+import { storage } from "./storage.js";
+import { api } from "../shared/routes.js";
+import { insertUserSchema, insertResumeSchema, insertJobSchema } from "../shared/schema.js";
 import { z } from "zod";
-import { openai } from "./replit_integrations/image/client"; // Re-using the OpenAI client from the integration
+import { openai } from "./replit_integrations/image/client.js"; // Re-using the OpenAI client from the integration
 import multer from "multer";
 
 import { PDFParse } from "pdf-parse";
