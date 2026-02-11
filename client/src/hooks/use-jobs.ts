@@ -17,6 +17,7 @@ export function useJobs() {
       return api.jobs.list.responses[200].parse(await res.json());
     },
     enabled: !!auth.currentUser, // Only fetch when logged in
+    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 }
 
@@ -107,12 +108,33 @@ export function useDeleteJob() {
       if (!res.ok) throw new Error("Failed to delete job");
       return api.jobs.delete.responses[200].parse(await res.json());
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [api.jobs.list.path] });
-      toast({ title: "Job Deleted", description: "Job removed from your tracker." });
+    onMutate: async (id) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: [api.jobs.list.path] });
+
+      // Snapshot previous value
+      const previousJobs = queryClient.getQueryData([api.jobs.list.path]);
+
+      // Optimistically update to new value
+      queryClient.setQueryData([api.jobs.list.path], (old: any) =>
+        old?.filter((job: any) => job.id !== id)
+      );
+
+      return { previousJobs };
     },
-    onError: (err) => {
+    onError: (err, id, context) => {
+      // Rollback on error
+      if (context?.previousJobs) {
+        queryClient.setQueryData([api.jobs.list.path], context.previousJobs);
+      }
       toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+    onSettled: () => {
+      // Always refetch after error or success
+      queryClient.invalidateQueries({ queryKey: [api.jobs.list.path] });
+    },
+    onSuccess: () => {
+      toast({ title: "Job Deleted", description: "Job removed from your tracker." });
     },
   });
 }

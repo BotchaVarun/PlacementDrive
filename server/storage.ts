@@ -53,6 +53,8 @@ export interface IChatStorage {
 }
 
 export class FirestoreStorage implements IStorage {
+  private userCache = new Map<string, User>();
+
   // Helpers
   private convertDate(data: any): any {
     if (!data) return data;
@@ -72,12 +74,17 @@ export class FirestoreStorage implements IStorage {
   }
 
   async getUserByFirebaseUid(uid: string): Promise<User | undefined> {
+    if (this.userCache.has(uid)) return this.userCache.get(uid);
+
     const usersRef = collection(db, "users");
     const q = query(usersRef, where("firebaseUid", "==", uid));
     const querySnapshot = await getDocs(q);
     if (querySnapshot.empty) return undefined;
     const docSnap = querySnapshot.docs[0];
-    return { id: docSnap.id, ...this.convertDate(docSnap.data()) } as User;
+    const user = { id: docSnap.id, ...this.convertDate(docSnap.data()) } as User;
+
+    this.userCache.set(uid, user);
+    return user;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {

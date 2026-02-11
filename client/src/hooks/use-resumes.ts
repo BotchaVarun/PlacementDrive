@@ -16,6 +16,7 @@ export function useResumes() {
       return api.resumes.list.responses[200].parse(await res.json());
     },
     enabled: !!auth.currentUser,
+    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 }
 
