@@ -187,137 +187,133 @@ export async function registerRoutes(
       if (!result) {
         console.error("Failed to parse JSON from Groq. Raw content:", content);
         throw new Error("Invalid JSON response from AI");
-      } console.error("Failed to parse JSON from Groq. Raw content:", content);
-      console.error("JSON Error:", e);
-      // Fallback or throw
-      throw new Error("Invalid JSON response from AI");
-    }
+      }
 
       // Save result
       const updatedResume = await storage.updateResumeAnalysis(
-      resumeId,
-      result.atsScore || 0,
-      result,
-      result.optimizedLatex || ""
-    );
+        resumeId,
+        result.atsScore || 0,
+        result,
+        result.optimizedLatex || ""
+      );
 
-    res.json({
-      atsScore: result.atsScore,
-      sectionScores: result.sectionScores,
-      missingKeywords: result.missingKeywords,
-      feedback: result.feedback,
-      optimizedLatex: result.optimizedLatex || "",
-    });
+      res.json({
+        atsScore: result.atsScore,
+        sectionScores: result.sectionScores,
+        missingKeywords: result.missingKeywords,
+        feedback: result.feedback,
+        optimizedLatex: result.optimizedLatex || "",
+      });
 
-  } catch (err) {
-    console.error("Analysis error:", err);
-    res.status(500).json({ message: "Failed to analyze resume" });
-  }
-});
-
-// Jobs
-app.get(api.jobs.list.path, async (req, res) => {
-  const jobs = await storage.getJobs();
-  res.json(jobs);
-});
-
-app.post(api.jobs.create.path, async (req, res) => {
-  const user = await storage.getUserByFirebaseUid("mock-user-uid");
-  if (!user) return res.status(500).json({ message: "Mock user not found" });
-  const input = api.jobs.create.input.parse({ ...req.body, userId: user.id });
-  const job = await storage.createJob(input);
-  res.status(201).json(job);
-});
-
-app.patch(api.jobs.update.path, async (req, res) => {
-  const id = req.params.id;
-  const input = api.jobs.update.input.parse(req.body);
-  try {
-    const job = await storage.updateJob(id, input);
-    res.json(job);
-  } catch (error) {
-    console.error("Update job error:", error);
-    res.status(404).json({ message: "Job not found" });
-  }
-});
-
-app.post(api.jobs.recommend.path, async (req, res) => {
-  // Mock recommendations for now
-  const mockJobs = [
-    {
-      title: "Senior Full Stack Engineer",
-      company: "Tech Corp",
-      description: "Looking for React/Node experts...",
-      source: "LinkedIn",
-      matchScore: 95,
-      userId: 1, // Assign to mock user
-    },
-    {
-      title: "Backend Developer",
-      company: "Startup Inc",
-      description: "Python/Django role...",
-      source: "Indeed",
-      matchScore: 88,
-      userId: 1,
+    } catch (err) {
+      console.error("Analysis error:", err);
+      res.status(500).json({ message: "Failed to analyze resume" });
     }
-  ];
+  });
 
-  // In a real app, we'd fetch from APIs or use LLM to find matches
-  // For this MVP, we'll just return these mocks and save them if they don't exist
-  // Simulating "fetching"
-  res.json(mockJobs);
-});
+  // Jobs
+  app.get(api.jobs.list.path, async (req, res) => {
+    const jobs = await storage.getJobs();
+    res.json(jobs);
+  });
 
-// Seed Data
-async function seedDatabase() {
-  // Check if user exists by some criteria or just try to get a known mock ID if we want
-  // But with Firestore auto-ids, we might need to search by email/uid.
-  let user = await storage.getUserByFirebaseUid("mock-user-uid");
+  app.post(api.jobs.create.path, async (req, res) => {
+    const user = await storage.getUserByFirebaseUid("mock-user-uid");
+    if (!user) return res.status(500).json({ message: "Mock user not found" });
+    const input = api.jobs.create.input.parse({ ...req.body, userId: user.id });
+    const job = await storage.createJob(input);
+    res.status(201).json(job);
+  });
 
-  if (!user) {
-    // Create a mock user for seeding
-    user = await storage.createUser({
-      firebaseUid: "mock-user-uid",
-      email: "demo@placementprime.com",
-      name: "Demo User"
-    });
+  app.patch(api.jobs.update.path, async (req, res) => {
+    const id = req.params.id;
+    const input = api.jobs.update.input.parse(req.body);
+    try {
+      const job = await storage.updateJob(id, input);
+      res.json(job);
+    } catch (error) {
+      console.error("Update job error:", error);
+      res.status(404).json({ message: "Job not found" });
+    }
+  });
+
+  app.post(api.jobs.recommend.path, async (req, res) => {
+    // Mock recommendations for now
+    const mockJobs = [
+      {
+        title: "Senior Full Stack Engineer",
+        company: "Tech Corp",
+        description: "Looking for React/Node experts...",
+        source: "LinkedIn",
+        matchScore: 95,
+        userId: 1, // Assign to mock user
+      },
+      {
+        title: "Backend Developer",
+        company: "Startup Inc",
+        description: "Python/Django role...",
+        source: "Indeed",
+        matchScore: 88,
+        userId: 1,
+      }
+    ];
+
+    // In a real app, we'd fetch from APIs or use LLM to find matches
+    // For this MVP, we'll just return these mocks and save them if they don't exist
+    // Simulating "fetching"
+    res.json(mockJobs);
+  });
+
+  // Seed Data
+  async function seedDatabase() {
+    // Check if user exists by some criteria or just try to get a known mock ID if we want
+    // But with Firestore auto-ids, we might need to search by email/uid.
+    let user = await storage.getUserByFirebaseUid("mock-user-uid");
+
+    if (!user) {
+      // Create a mock user for seeding
+      user = await storage.createUser({
+        firebaseUid: "mock-user-uid",
+        email: "demo@placementprime.com",
+        name: "Demo User"
+      });
+    }
+
+    /* Default jobs removed as per user request
+    const jobs = await storage.getJobs();
+    if (jobs.length === 0) {
+      await storage.createJob({
+        title: "Frontend Developer",
+        company: "Google",
+        description: "React and TypeScript expertise required.",
+        source: "LinkedIn",
+        status: "new",
+        matchScore: 92,
+        userId: user.id
+      });
+      await storage.createJob({
+        title: "Backend Engineer",
+        company: "Amazon",
+        description: "Java and AWS experience needed.",
+        source: "Indeed",
+        status: "applied",
+        matchScore: 85,
+        userId: user.id
+      });
+      await storage.createJob({
+        title: "Full Stack Engineer",
+        company: "Startup",
+        description: "Node.js and Vue.js.",
+        source: "Direct",
+        status: "interview",
+        matchScore: 89,
+        userId: user.id
+      });
+    }
+    */
   }
 
-  /* Default jobs removed as per user request
-  const jobs = await storage.getJobs();
-  if (jobs.length === 0) {
-    await storage.createJob({
-      title: "Frontend Developer",
-      company: "Google",
-      description: "React and TypeScript expertise required.",
-      source: "LinkedIn",
-      status: "new",
-      matchScore: 92,
-      userId: user.id
-    });
-    await storage.createJob({
-      title: "Backend Engineer",
-      company: "Amazon",
-      description: "Java and AWS experience needed.",
-      source: "Indeed",
-      status: "applied",
-      matchScore: 85,
-      userId: user.id
-    });
-    await storage.createJob({
-      title: "Full Stack Engineer",
-      company: "Startup",
-      description: "Node.js and Vue.js.",
-      source: "Direct",
-      status: "interview",
-      matchScore: 89,
-      userId: user.id
-    });
-  }
-  */
-}
+  await seedDatabase();
 
-await seedDatabase();
-
-return httpServer;
+  return httpServer;
 }
