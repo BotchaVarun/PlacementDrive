@@ -256,6 +256,27 @@ export async function registerRoutes(
     }
   });
 
+  app.delete(api.jobs.delete.path, checkAuth, async (req, res) => {
+    const id = req.params.id as string;
+    const userId = req.user!.id;
+
+    try {
+      const job = await storage.getJob(id);
+      if (!job) return res.status(404).json({ message: "Job not found" });
+
+      // Verify ownership
+      if (job.userId !== userId) {
+        return res.status(403).json({ message: "Unauthorized to delete this job" });
+      }
+
+      await storage.deleteJob(id);
+      res.json({ message: "Job deleted successfully" });
+    } catch (error) {
+      console.error("Delete job error:", error);
+      res.status(500).json({ message: "Failed to delete job" });
+    }
+  });
+
   app.post(api.jobs.recommend.path, async (req, res) => {
     // Mock recommendations for now
     const mockJobs = [

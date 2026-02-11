@@ -11,7 +11,8 @@ import {
   where,
   orderBy,
   limit,
-  Timestamp
+  Timestamp,
+  deleteDoc
 } from "firebase/firestore";
 import {
   User, InsertUser,
@@ -39,6 +40,7 @@ export interface IStorage {
   getUserJobs(userId: string): Promise<Job[]>;
   getJobs(): Promise<Job[]>; // For general list
   updateJob(id: string, job: Partial<InsertJob>): Promise<Job>;
+  deleteJob(id: string): Promise<void>;
 }
 
 export interface IChatStorage {
@@ -165,6 +167,11 @@ export class FirestoreStorage implements IStorage {
     const docRef = doc(db, "jobs", id);
     await updateDoc(docRef, job);
     return this.getJob(id) as Promise<Job>;
+  }
+
+  async deleteJob(id: string): Promise<void> {
+    const docRef = doc(db, "jobs", id);
+    await deleteDoc(docRef);
   }
 }
 
