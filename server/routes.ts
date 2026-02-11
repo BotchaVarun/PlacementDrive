@@ -116,7 +116,7 @@ export async function registerRoutes(
         CRITICAL ASSESSMENT INSTRUCTIONS:
         1. **Skill Matching**: Meticulously compare the skills required in the Job Description with those present in the Resume. Identify exactly which required skills are matching and which are missing.
         2. **Alignment Analysis**: Evaluate how well the candidate's experience and project descriptions align with the core responsibilities and requirements of the job.
-        4. **Force Optimization**: You MUST provide an `optimizedLatex` version of the resume. Even if the resume is strong, improve its impact, action verbs, and alignment with the JD. Do not return an empty string for `optimizedLatex`.
+        4. **Force Optimization**: You MUST provide an 'optimizedLatex' version of the resume. Even if the resume is strong, improve its impact, action verbs, and alignment with the JD. Do not return an empty string for 'optimizedLatex'.
 
         Provide the output in valid JSON format with the following structure:
         {
