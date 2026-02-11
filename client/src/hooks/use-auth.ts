@@ -23,6 +23,11 @@ export function useAuth() {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      // Clear data from previous session/user to prevent staleness
+      if (!currentUser || currentUser.uid !== user?.uid) {
+        queryClient.clear();
+      }
+
       setUser(currentUser);
       setIsLoading(false);
 
