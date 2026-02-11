@@ -130,7 +130,7 @@ export async function registerRoutes(
 
       // GROQ API IMPLEMENTATION
       const completion = await groq.chat.completions.create({
-        model: "openai/gpt-oss-120b",
+        model: "llama-3.3-70b-versatile",
         messages: [{ role: "user", content: prompt }],
         temperature: 1,
         max_completion_tokens: 8192,
