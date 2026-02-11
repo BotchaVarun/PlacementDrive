@@ -113,6 +113,11 @@ export async function registerRoutes(
         JOB DESCRIPTION:
         ${jobDescription}
 
+        CRITICAL ASSESSMENT INSTRUCTIONS:
+        1. **Skill Matching**: Meticulously compare the skills required in the Job Description with those present in the Resume. Identify exactly which required skills are matching and which are missing.
+        2. **Alignment Analysis**: Evaluate how well the candidate's experience and project descriptions align with the core responsibilities and requirements of the job.
+        3. **Contextual Relevance**: Ensure that the "missingKeywords" you identify are substantive technical or domain-specific skills found in the JD but absent from the Resume, not just generic terms.
+
         Provide the output in valid JSON format with the following structure:
         {
           "atsScore": number (0-100),
