@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { CreateJobDialog } from "@/components/CreateJobDialog";
 import { MoreHorizontal, ExternalLink, Calendar, MapPin, Building2, SearchX } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent } from "@/components/ui/dropdown-menu";
-import { useUpdateJob } from "@/hooks/use-jobs";
+import { useUpdateJob, useDeleteJob } from "@/hooks/use-jobs";
 
 import { EditJobDialog } from "@/components/EditJobDialog";
 import { Job } from "@shared/schema";
@@ -36,6 +36,14 @@ export default function JobTracker() {
 
   const handleMove = async (job: Job, newStatus: string) => {
     await updateJob.mutateAsync({ id: job.id, data: { status: newStatus } });
+  };
+
+  const deleteJob = useDeleteJob();
+
+  const handleDelete = async (id: string) => {
+    if (confirm("Are you sure you want to delete this job?")) {
+      await deleteJob.mutateAsync(id);
+    }
   };
 
   const StatusColumn = ({ title, status }: { title: string, status: string | string[] }) => {
@@ -86,7 +94,9 @@ export default function JobTracker() {
                             <DropdownMenuItem onClick={() => handleMove(job, 'rejected')}>Rejected</DropdownMenuItem>
                           </DropdownMenuSubContent>
                         </DropdownMenuSub>
-                        <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
+                        <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(job.id)}>
+                          Delete
+                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
