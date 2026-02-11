@@ -277,7 +277,7 @@ export async function registerRoutes(
     }
   }
 
-  seedDatabase().catch(console.error);
+  await seedDatabase();
 
   return httpServer;
 }
