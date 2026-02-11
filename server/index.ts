@@ -1,5 +1,5 @@
-import { setupApp, log, app, httpServer } from "./app";
-import { serveStatic } from "./static";
+import { setupApp, log, app, httpServer } from "./app.js";
+import { serveStatic } from "./static.js";
 
 (async () => {
   await setupApp();

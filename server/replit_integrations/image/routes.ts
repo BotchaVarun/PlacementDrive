@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { openai } from "./client";
+import { openai } from "./client.js";
 
 export function registerImageRoutes(app: Express): void {
   app.post("/api/generate-image", async (req: Request, res: Response) => {
@@ -17,7 +17,10 @@ export function registerImageRoutes(app: Express): void {
         size: size as "1024x1024" | "512x512" | "256x256",
       });
 
-      const imageData = response.data[0];
+      const imageData = response.data?.[0];
+      if (!imageData) {
+        throw new Error("No image data received from OpenAI");
+      }
       res.json({
         url: imageData.url,
         b64_json: imageData.b64_json,

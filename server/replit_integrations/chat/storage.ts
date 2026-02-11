@@ -1,4 +1,4 @@
-import { db } from "../../lib/firebase";
+import { db } from "../../lib/firebase.js";
 import {
   collection,
   doc,
@@ -14,7 +14,7 @@ import {
   limit,
   Timestamp
 } from "firebase/firestore";
-import { conversations, messages, Conversation, Message } from "@shared/schema";
+import { conversations, messages, Conversation, Message } from "../../../shared/schema.js";
 
 export interface IChatStorage {
   getConversation(id: string): Promise<Conversation | undefined>;
