@@ -4,10 +4,12 @@ import { storage } from "./storage.js";
 import { api } from "../shared/routes.js";
 import { insertUserSchema, insertResumeSchema, insertJobSchema } from "../shared/schema.js";
 import { z } from "zod";
-import { openai } from "./replit_integrations/image/client.js"; // Re-using the OpenAI client from the integration
+import { openai } from "./replit_integrations/image/client.js";
 import multer from "multer";
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+const pdfParse = require("pdf-parse");
 
-import { PDFParse } from "pdf-parse";
 import Groq from "groq-sdk";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
@@ -34,8 +36,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Only PDF files are allowed" });
       }
 
-      const pdfParser = new PDFParse({ data: req.file.buffer });
-      const data = await pdfParser.getText();
+      const data = await pdfParse(req.file.buffer);
       res.json({ text: data.text });
     } catch (error) {
       console.error("PDF Parse error:", error);
