@@ -13,7 +13,8 @@ import {
   limit,
   Timestamp,
   deleteDoc,
-  getCountFromServer
+  getCountFromServer,
+  Bytes
 } from "firebase/firestore";
 import {
   User, InsertUser,
@@ -349,22 +350,50 @@ export class FirestoreStorage implements IStorage {
     const q = query(ref, where("userId", "==", userId));
     const snap = await getDocs(q);
     if (snap.empty) return undefined;
-    return { id: snap.docs[0].id, ...this.convertDate(snap.docs[0].data()) } as PersonalInfo;
+
+    const data = snap.docs[0].data();
+    const result = { id: snap.docs[0].id, ...this.convertDate(data) } as PersonalInfo & { photoBase64?: string };
+
+    // Server conversion: binary BLOB to Base64 string for the frontend
+    if (data.photoBlob && data.photoBlob instanceof Bytes) {
+      // Re-attach data URI scheme so browser can render directly
+      result.photoBase64 = `data:image/webp;base64,${data.photoBlob.toBase64()}`;
+    }
+
+    return result;
   }
 
-  async updatePersonalInfo(userId: string, data: InsertPersonalInfo): Promise<PersonalInfo> {
+  async updatePersonalInfo(userId: string, data: InsertPersonalInfo & { photoBase64?: string }): Promise<PersonalInfo> {
     const ref = collection(db, "user_personal_info");
     const q = query(ref, where("userId", "==", userId));
     const snap = await getDocs(q);
     const now = new Date();
+
+    // Server conversion: Base64 to binary BLOB for database
+    let photoBlob = undefined;
+    if (data.photoBase64) {
+      try {
+        const base64Str = data.photoBase64.split(",")[1] || data.photoBase64;
+        photoBlob = Bytes.fromBase64String(base64Str);
+      } catch (e) {
+        console.error("Failed to parse base64 image", e);
+      }
+    }
+
+    const dbData = { ...data };
+    delete dbData.photoBase64; // Don't store the long string
+    if (photoBlob) {
+      (dbData as any).photoBlob = photoBlob;
+    }
+
     if (snap.empty) {
-      const docRef = await addDoc(ref, { ...data, createdAt: now });
-      return { id: docRef.id, ...data, createdAt: now } as PersonalInfo;
+      const docRef = await addDoc(ref, { ...dbData, createdAt: now });
+      return { id: docRef.id, ...data, photoBase64: data.photoBase64, createdAt: now } as PersonalInfo;
     } else {
       const docId = snap.docs[0].id;
       const docRef = doc(db, "user_personal_info", docId);
-      await updateDoc(docRef, data);
-      return { id: docId, ...data, createdAt: snap.docs[0].data().createdAt?.toDate() || now } as PersonalInfo;
+      await updateDoc(docRef, dbData);
+      return { id: docId, ...data, photoBase64: data.photoBase64, createdAt: snap.docs[0].data().createdAt?.toDate() || now } as PersonalInfo;
     }
   }
 

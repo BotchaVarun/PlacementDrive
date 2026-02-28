@@ -124,8 +124,7 @@ export default function Account() {
 
         setIsUploadingPhoto(true);
         try {
-            // Client-side compression
-            const compressedBlob = await new Promise<Blob>((resolve, reject) => {
+            const base64Image = await new Promise<string>((resolve, reject) => {
                 const img = new Image();
                 img.onload = () => {
                     const canvas = document.createElement("canvas");
@@ -151,23 +150,24 @@ export default function Account() {
                     if (!ctx) return reject(new Error("Canvas not supported"));
 
                     ctx.drawImage(img, 0, 0, width, height);
-                    canvas.toBlob((blob) => {
-                        if (blob) resolve(blob);
-                        else reject(new Error("Compression failed"));
-                    }, "image/webp", 0.8); // 80% quality WebP
+                    resolve(canvas.toDataURL("image/webp", 0.8)); // 80% quality WebP Base64
                 };
                 img.onerror = () => reject(new Error("Image load failed"));
                 img.src = URL.createObjectURL(file);
             });
 
-            // Fast Upload
-            const fileRef = ref(storage, `avatars/${user.uid}_${Date.now()}.webp`);
-            await uploadBytes(fileRef, compressedBlob);
-            const photoURL = await getDownloadURL(fileRef);
+            // Fast Upload directly to our DB endpoint
+            await apiRequest("PATCH", "/api/profile/personal-info", {
+                ...info,
+                fullName: info?.fullName || user.displayName || "User",
+                email: info?.email || user.email || "",
+                photoBase64: base64Image
+            });
 
-            // Non-blocking UI update (optimistic)
-            await updateProfile(user, { photoURL });
-            toast({ title: "Profile updated", description: "Your profile picture has been updated." });
+            // Refresh React Query Cache
+            queryClient.invalidateQueries({ queryKey: ["/api/profile"] });
+
+            toast({ title: "Profile updated", description: "Your profile picture has been saved securely to the database." });
         } catch (error: any) {
             toast({ title: "Upload failed", description: error.message, variant: "destructive" });
         } finally {
@@ -191,6 +191,8 @@ export default function Account() {
                                         <div className="h-full w-full rounded-xl bg-primary/5 flex items-center justify-center overflow-hidden">
                                             {isUploadingPhoto ? (
                                                 <Loader2 className="h-8 w-8 text-primary animate-spin" />
+                                            ) : info?.photoBase64 ? (
+                                                <img src={info.photoBase64} alt="Profile" className="h-full w-full object-cover" />
                                             ) : user?.photoURL ? (
                                                 <img src={user.photoURL} alt="Profile" className="h-full w-full object-cover" />
                                             ) : (

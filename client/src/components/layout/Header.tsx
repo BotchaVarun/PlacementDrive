@@ -1,4 +1,5 @@
 import { useAuth } from "@/hooks/use-auth";
+import { useQuery } from "@tanstack/react-query";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -21,6 +22,8 @@ export function Header() {
   const initials = user?.displayName
     ? user.displayName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)
     : user?.email?.substring(0, 2).toUpperCase() || "U";
+  const { data: profile } = useQuery<any>({ queryKey: ["/api/profile"] });
+  const displayPhoto = profile?.personalInfo?.photoBase64 || user?.photoURL || undefined;
 
   return (
     <header className="h-16 border-b border-border bg-card/50 backdrop-blur-xl px-6 flex items-center justify-between sticky top-0 z-50">
@@ -52,7 +55,7 @@ export function Header() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Avatar className="h-9 w-9 cursor-pointer border-2 border-border hover:ring-2 hover:ring-primary/30 hover:border-primary/40 transition-all">
-              <AvatarImage src={user?.photoURL || undefined} />
+              <AvatarImage src={displayPhoto} />
               <AvatarFallback className="bg-gradient-to-br from-primary to-purple-600 text-primary-foreground font-bold text-sm">
                 {initials}
               </AvatarFallback>
@@ -61,10 +64,10 @@ export function Header() {
 
           <DropdownMenuContent align="end" className="w-64 p-2">
             {/* User info header */}
-            <div className="flex items-center gap-3 px-2 py-3 mb-1">
-              <Avatar className="h-10 w-10 border border-border">
-                <AvatarImage src={user?.photoURL || undefined} />
-                <AvatarFallback className="bg-gradient-to-br from-primary to-purple-600 text-primary-foreground font-bold text-sm">
+            <div className="flex items-center gap-3 p-2 border-b border-border/50">
+              <Avatar className="h-10 w-10">
+                <AvatarImage src={displayPhoto} />
+                <AvatarFallback className="bg-primary/20 text-primary font-bold">
                   {initials}
                 </AvatarFallback>
               </Avatar>

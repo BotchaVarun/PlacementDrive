@@ -117,6 +117,7 @@ export const insertPersonalInfoSchema = z.object({
   portfolioUrl: z.string().optional(),
   location: z.string().optional(),
   summary: z.string().optional(),
+  photoBase64: z.string().optional(),
 });
 
 export const personalInfoSchema = insertPersonalInfoSchema.extend({
