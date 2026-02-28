@@ -1,33 +1,35 @@
+import { memo } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { useJobs } from "@/hooks/use-jobs";
-import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { useJobs, useUpdateJob, useDeleteJob } from "@/hooks/use-jobs";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CreateJobDialog } from "@/components/CreateJobDialog";
-import { MoreHorizontal, ExternalLink, Calendar, MapPin, Building2, SearchX } from "lucide-react";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent } from "@/components/ui/dropdown-menu";
-import { useUpdateJob, useDeleteJob } from "@/hooks/use-jobs";
-
+import { MoreHorizontal, ExternalLink, Calendar, Building2, SearchX } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent
+} from "@/components/ui/dropdown-menu";
 import { EditJobDialog } from "@/components/EditJobDialog";
 import { Job } from "@shared/schema";
 import { useState } from "react";
 
+/**
+ * Normalize a potentially null/undefined status to a safe string.
+ * Jobs with no status default to "new" (Wishlist column).
+ */
+const normalizeStatus = (status?: string | null): string => status?.toLowerCase() ?? "new";
+
 export default function JobTracker() {
-  const { data: jobs, isLoading } = useJobs();
+  const { data: jobs, isLoading, error } = useJobs(undefined, true);
   const updateJob = useUpdateJob();
+  const deleteJob = useDeleteJob();
   const [editingJob, setEditingJob] = useState<Job | null>(null);
   const [editOpen, setEditOpen] = useState(false);
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'new': return "bg-blue-100 text-blue-700 border-blue-200";
-      case 'applied': return "bg-yellow-100 text-yellow-700 border-yellow-200";
-      case 'interview': return "bg-purple-100 text-purple-700 border-purple-200";
-      case 'rejected': return "bg-red-100 text-red-700 border-red-200";
-      case 'offer': return "bg-green-100 text-green-700 border-green-200";
-      default: return "bg-gray-100 text-gray-700 border-gray-200";
-    }
-  };
 
   const handleEdit = (job: Job) => {
     setEditingJob(job);
@@ -38,8 +40,6 @@ export default function JobTracker() {
     await updateJob.mutateAsync({ id: job.id, data: { status: newStatus } });
   };
 
-  const deleteJob = useDeleteJob();
-
   const handleDelete = async (id: string) => {
     if (confirm("Are you sure you want to delete this job?")) {
       await deleteJob.mutateAsync(id);
@@ -47,9 +47,10 @@ export default function JobTracker() {
   };
 
   const StatusColumn = ({ title, status }: { title: string, status: string | string[] }) => {
-    const filteredJobs = jobs?.filter(j =>
-      Array.isArray(status) ? status.includes(j.status) : j.status === status
-    ) || [];
+    const filteredJobs = jobs?.filter(j => {
+      const normalized = normalizeStatus(j.status);
+      return Array.isArray(status) ? status.includes(normalized) : normalized === status;
+    }) || [];
 
     return (
       <div className="flex flex-col gap-4 min-w-[300px] flex-1">
@@ -66,54 +67,13 @@ export default function JobTracker() {
             </div>
           ) : (
             filteredJobs.map(job => (
-              <Card key={job.id} className="hover:shadow-md transition-shadow cursor-pointer group">
-                <CardContent className="p-4 space-y-3">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h4 className="font-bold text-foreground line-clamp-1">{job.title}</h4>
-                      <div className="flex items-center gap-1 text-sm text-muted-foreground mt-0.5">
-                        <Building2 className="h-3 w-3" />
-                        <span>{job.company}</span>
-                      </div>
-                    </div>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-6 w-6 -mr-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleEdit(job)}>Edit Details</DropdownMenuItem>
-                        <DropdownMenuSub>
-                          <DropdownMenuSubTrigger>Move to...</DropdownMenuSubTrigger>
-                          <DropdownMenuSubContent>
-                            <DropdownMenuItem onClick={() => handleMove(job, 'new')}>Wishlist</DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleMove(job, 'applied')}>Applied</DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleMove(job, 'interview')}>Interview</DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleMove(job, 'offer')}>Offer</DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleMove(job, 'rejected')}>Rejected</DropdownMenuItem>
-                          </DropdownMenuSubContent>
-                        </DropdownMenuSub>
-                        <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(job.id)}>
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-2">
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Calendar className="h-3 w-3" />
-                      {new Date(job.createdAt!).toLocaleDateString()}
-                    </div>
-                    {job.url && (
-                      <a href={job.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-xs flex items-center gap-1">
-                        Link <ExternalLink className="h-3 w-3" />
-                      </a>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
+              <JobItem
+                key={job.id}
+                job={job}
+                onEdit={handleEdit}
+                onMove={handleMove}
+                onDelete={handleDelete}
+              />
             ))
           )}
         </div>
@@ -131,12 +91,24 @@ export default function JobTracker() {
         <CreateJobDialog />
       </div>
 
+      {error && (
+        <div className="bg-destructive/10 border border-destructive/20 text-destructive p-4 rounded-lg mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold">Error loading jobs:</span>
+            <span>{(error as Error).message || "Something went wrong."}</span>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+            Retry
+          </Button>
+        </div>
+      )}
+
       <div className="flex gap-6 overflow-x-auto pb-6">
         {isLoading ? (
           [1, 2, 3, 4].map(i => <div key={i} className="min-w-[300px] h-96 bg-muted/20 rounded-xl animate-pulse" />)
         ) : (
           <>
-            <StatusColumn title="Wishlist" status="new" />
+            <StatusColumn title="Wishlist" status={["new", "to apply"]} />
             <StatusColumn title="Applied" status="applied" />
             <StatusColumn title="Interview" status="interview" />
             <StatusColumn title="Offer / Rejected" status={['offer', 'rejected']} />
@@ -152,3 +124,71 @@ export default function JobTracker() {
     </DashboardLayout>
   );
 }
+
+const JobItem = memo(({ job, onEdit, onMove, onDelete }: {
+  job: Job,
+  onEdit: (job: Job) => void,
+  onMove: (job: Job, status: string) => void,
+  onDelete: (id: string) => void
+}) => {
+  // Graceful null fallbacks for all displayed fields
+  const title = job.title || "Untitled Position";
+  const company = job.company || "Unknown Company";
+  const appliedDate = (job as any).appliedDate as string | null | undefined;
+  const displayDate = appliedDate
+    ? `Applied ${new Date(appliedDate).toLocaleDateString()}`
+    : job.createdAt
+      ? `Added ${new Date(job.createdAt).toLocaleDateString()}`
+      : "Recently added";
+
+  return (
+    <Card className="hover:shadow-md transition-shadow cursor-pointer group">
+      <CardContent className="p-4 space-y-3">
+        <div className="flex justify-between items-start">
+          <div>
+            <h4 className="font-bold text-foreground line-clamp-1">{title}</h4>
+            <div className="flex items-center gap-1 text-sm text-muted-foreground mt-0.5">
+              <Building2 className="h-3 w-3" />
+              <span>{company}</span>
+            </div>
+          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-6 w-6 -mr-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => onEdit(job)}>Edit Details</DropdownMenuItem>
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>Move to...</DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  <DropdownMenuItem onClick={() => onMove(job, 'new')}>Wishlist</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onMove(job, 'applied')}>Applied</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onMove(job, 'interview')}>Interview</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onMove(job, 'offer')}>Offer</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onMove(job, 'rejected')}>Rejected</DropdownMenuItem>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              <DropdownMenuItem className="text-destructive" onClick={() => onDelete(job.id)}>
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        <div className="flex items-center justify-between pt-2">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Calendar className="h-3 w-3" />
+            {displayDate}
+          </div>
+          {job.url ? (
+            <a href={job.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-xs flex items-center gap-1">
+              Link <ExternalLink className="h-3 w-3" />
+            </a>
+          ) : null}
+        </div>
+      </CardContent>
+    </Card>
+  );
+});

@@ -18,6 +18,7 @@ import {
   ArrowRight,
   Sparkles
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { useToast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
@@ -25,6 +26,7 @@ import { motion, AnimatePresence } from "framer-motion";
 export default function ResumeEnhancer() {
   const [resumeTitle, setResumeTitle] = useState("");
   const [resumeContent, setResumeContent] = useState("");
+  const [resumeId, setResumeId] = useState<string | null>(null);
   const [jobDescription, setJobDescription] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
@@ -35,9 +37,21 @@ export default function ResumeEnhancer() {
   const analyzeResume = useAnalyzeResume();
   const { toast } = useToast();
 
+  useEffect(() => {
+    const pendingJd = localStorage.getItem("jd_to_enhance");
+    if (pendingJd) {
+      setJobDescription(pendingJd);
+      localStorage.removeItem("jd_to_enhance");
+      toast({
+        title: "Job Description Loaded",
+        description: "Optimizing your resume for your selected job.",
+      });
+    }
+  }, [toast]);
+
   const handleAnalyze = async () => {
-    if (!resumeContent || !jobDescription) {
-      toast({ title: "Missing Information", description: "Please provide both resume content and job description.", variant: "destructive" });
+    if (!jobDescription) {
+      toast({ title: "Missing Job Description", description: "Please provide a job description to target.", variant: "destructive" });
       return;
     }
 
@@ -45,17 +59,21 @@ export default function ResumeEnhancer() {
     setAnalysisResult(null);
 
     try {
-      // 1. Create the resume entry first
-      const resume = await createResume.mutateAsync({
-        title: resumeTitle || "Untitled Resume",
-        content: resumeContent,
-      });
+      let result;
 
-      // 2. Analyze it
-      const result = await analyzeResume.mutateAsync({
-        resumeId: resume.id,
-        jobDescription,
-      });
+      if (resumeId) {
+        // Case 2/3: Existing resume or newly uploaded one with an ID
+        result = await analyzeResume.mutateAsync({
+          resumeId,
+          jobDescription,
+        });
+      } else {
+        // Case 1: Just JD (or pasted text without an ID yet)
+        result = await analyzeResume.mutateAsync({
+          resumeContent: resumeContent || undefined,
+          jobDescription,
+        });
+      }
 
       setAnalysisResult(result);
     } catch (error) {
@@ -240,7 +258,15 @@ export default function ResumeEnhancer() {
                   <Card className="bg-gradient-to-br from-card to-secondary/30 border-primary/20 shadow-lg">
                     <CardHeader>
                       <CardTitle className="flex justify-between items-center">
-                        <span>Analysis Results</span>
+                        <div className="flex items-center gap-2">
+                          <span>Analysis Results</span>
+                          {analysisResult.usingProfileData && (
+                            <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20 flex gap-1 items-center">
+                              <Sparkles className="h-3 w-3" />
+                              Using Profile Data
+                            </Badge>
+                          )}
+                        </div>
                         <span className="text-sm font-normal text-muted-foreground bg-background px-3 py-1 rounded-full border">
                           Generated just now
                         </span>
@@ -332,7 +358,17 @@ export default function ResumeEnhancer() {
                         >
                           <Copy className="h-4 w-4 mr-1" /> Copy
                         </Button>
-                        <Button variant="ghost" size="sm">
+                        <Button variant="ghost" size="sm" onClick={() => {
+                          const blob = new Blob([analysisResult.optimizedLatex], { type: "text/plain;charset=utf-8" });
+                          const url = URL.createObjectURL(blob);
+                          const link = document.createElement("a");
+                          link.href = url;
+                          link.download = "optimized_resume.tex";
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                          URL.revokeObjectURL(url);
+                        }}>
                           <Download className="h-4 w-4 mr-1" /> .tex
                         </Button>
                       </div>
@@ -360,7 +396,7 @@ export default function ResumeEnhancer() {
           </div>
         </div>
       </div>
-    </DashboardLayout>
+    </DashboardLayout >
   );
 }
 

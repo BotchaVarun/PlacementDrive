@@ -3,21 +3,23 @@ import { api } from "@shared/routes";
 import { useToast } from "@/hooks/use-toast";
 import { InsertJob } from "@shared/schema";
 import { auth } from "@/lib/firebase";
+import { apiRequest } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
 
-export function useJobs() {
+export function useJobs(limit?: number, summary: boolean = false) {
+  const { user } = useAuth();
   return useQuery({
-    queryKey: [api.jobs.list.path],
+    queryKey: [api.jobs.list.path, limit, summary],
     queryFn: async () => {
-      const token = await auth.currentUser?.getIdToken();
-      const headers: Record<string, string> = {};
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
-      const res = await fetch(api.jobs.list.path, { headers });
-      if (!res.ok) throw new Error("Failed to fetch jobs");
+      const params = new URLSearchParams();
+      if (limit) params.append("limit", limit.toString());
+      if (summary) params.append("summary", "true");
+      const url = `${api.jobs.list.path}${params.toString() ? `?${params.toString()}` : ""}`;
+      const res = await apiRequest("GET", url);
       return api.jobs.list.responses[200].parse(await res.json());
     },
-    enabled: !!auth.currentUser, // Only fetch when logged in
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 30000, // 30 seconds
+    enabled: !!user,
   });
 }
 
@@ -27,23 +29,14 @@ export function useCreateJob() {
 
   return useMutation({
     mutationFn: async (data: InsertJob) => {
-      const token = await auth.currentUser?.getIdToken();
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
-      const res = await fetch(api.jobs.create.path, {
-        method: api.jobs.create.method,
-        headers,
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) throw new Error("Failed to create job");
+      const res = await apiRequest("POST", api.jobs.create.path, data);
       return api.jobs.create.responses[201].parse(await res.json());
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.jobs.list.path] });
       toast({ title: "Job Added", description: "Job saved to your tracker." });
     },
-    onError: (err) => {
+    onError: (err: any) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     },
   });
@@ -52,16 +45,7 @@ export function useCreateJob() {
 export function useRecommendJobs() {
   return useMutation({
     mutationFn: async (data: { resumeId: number }) => {
-      const token = await auth.currentUser?.getIdToken();
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
-      const res = await fetch(api.jobs.recommend.path, {
-        method: api.jobs.recommend.method,
-        headers,
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) throw new Error("Failed to fetch recommendations");
+      const res = await apiRequest("POST", api.jobs.recommend.path, data);
       return api.jobs.recommend.responses[200].parse(await res.json());
     },
   });
@@ -73,19 +57,14 @@ export function useUpdateJob() {
 
   return useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<InsertJob> }) => {
-      const res = await fetch(api.jobs.update.path.replace(":id", id), {
-        method: api.jobs.update.method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) throw new Error("Failed to update job");
+      const res = await apiRequest("PATCH", api.jobs.update.path.replace(":id", id), data);
       return api.jobs.update.responses[200].parse(await res.json());
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.jobs.list.path] });
       toast({ title: "Job Updated", description: "Job details have been updated." });
     },
-    onError: (err) => {
+    onError: (err: any) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     },
   });
@@ -97,15 +76,7 @@ export function useDeleteJob() {
 
   return useMutation({
     mutationFn: async (id: string) => {
-      const token = await auth.currentUser?.getIdToken();
-      const headers: Record<string, string> = {};
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
-      const res = await fetch(api.jobs.delete.path.replace(":id", id), {
-        method: api.jobs.delete.method,
-        headers,
-      });
-      if (!res.ok) throw new Error("Failed to delete job");
+      const res = await apiRequest("DELETE", api.jobs.delete.path.replace(":id", id));
       return api.jobs.delete.responses[200].parse(await res.json());
     },
     onMutate: async (id) => {
@@ -122,7 +93,7 @@ export function useDeleteJob() {
 
       return { previousJobs };
     },
-    onError: (err, id, context) => {
+    onError: (err: any, id: any, context: any) => {
       // Rollback on error
       if (context?.previousJobs) {
         queryClient.setQueryData([api.jobs.list.path], context.previousJobs);

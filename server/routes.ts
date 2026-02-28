@@ -13,7 +13,21 @@ const pdfParse = require("pdf-parse");
 import Groq from "groq-sdk";
 import { checkAuth } from "./middleware/auth.js";
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || "dummy_key" });
+
+import {
+  insertInterviewSchema,
+  insertResponseSchema
+} from "../shared/schema.js";
+import {
+  generateInterviewQuestions,
+  evaluateAnswer,
+  transcribeAudio
+} from "./services/ai.js";
+import fs from "fs";
+import path from "path";
+import os from "os";
+import { JobService } from "./services/jobs.js";
 
 // Configure multer for memory storage
 const upload = multer({
@@ -67,7 +81,9 @@ export async function registerRoutes(
   // Resumes
   app.get(api.resumes.list.path, checkAuth, async (req, res) => {
     const userId = req.user!.id;
-    const resumes = await storage.getUserResumes(userId);
+    const limitCount = req.query.limit ? parseInt(req.query.limit as string) : undefined;
+    const summary = req.query.summary === "true";
+    const resumes = await storage.getUserResumes(userId, limitCount, summary);
     res.json(resumes);
   });
 
@@ -95,59 +111,88 @@ export async function registerRoutes(
   // AI Analysis Endpoint
   app.post(api.resumes.analyze.path, checkAuth, async (req, res) => {
     try {
-      const { resumeId, jobDescription } = api.resumes.analyze.input.parse(req.body);
-      const resume = await storage.getResume(resumeId);
-      if (!resume) return res.status(404).json({ message: "Resume not found" });
+      const { resumeId, resumeContent, jobDescription } = api.resumes.analyze.input.parse(req.body);
+      const userId = req.user!.id;
+
+      // Fetch profile data
+      const userProfile = await storage.getFullProfile(userId);
+      const profileString = JSON.stringify(userProfile, null, 2);
+
+      let existingContent = resumeContent || "";
+      let resumeTitle = "Generated Resume";
+
+      if (resumeId) {
+        const resume = await storage.getResume(resumeId as string);
+        if (resume) {
+          existingContent = resume.content;
+          resumeTitle = resume.title;
+        }
+      }
 
       // Call OpenAI
       const prompt = `
-        You are an advanced AI Resume Screening System.
-        Your task is to evaluate how well a candidate's resume matches a given job description.
+        You are an advanced AI Career Consultant and Resume Engineer. 
+        Your task is to create/optimize a candidate's LaTeX resume to perfectly match a given job description, leveraging both their existing resume (if provided) and their structured profile data.
 
-        You must analyze the resume across the following structured sections:
-        1. Skills
-        2. Professional Summary
-        3. Projects
-        4. Work Experience
-        5. Certifications
-
-        Perform deep semantic matching — not just keyword matching.
-        Understand context, seniority level, technologies, responsibilities, and impact.
-
-        RESUME CONTENT:
-        ${resume.content}
-
-        JOB DESCRIPTION:
+        CONTEXT:
+        - JOB DESCRIPTION:
         ${jobDescription}
 
-        CRITICAL OUTPUT INSTRUCTIONS:
-        1. **Skill Matching**: Meticulously compare the skills required in the Job Description with those present in the Resume. Identify exactly which required skills are matching and which are missing.
-        2. **Alignment Analysis**: Evaluate how well the candidate's experience and project descriptions align with the core responsibilities and requirements of the job.
-        4. **Force Optimization**: You MUST provide an 'optimizedLatex' version of the resume. Even if the resume is strong, improve its impact, action verbs, and alignment with the JD.
-        5. **Format**:
-           - First, provide the analysis in a valid JSON object within a \`\`\`json code block.
-           - Second, provide the full optimized LaTeX code in a separate \`\`\`latex code block.
-           - DO NOT include the "optimizedLatex" field in the JSON object.
+        - USER PROFILE DATA:
+        ${profileString}
 
-        Provide the output in valid JSON format with the following structure for the first block:
+        - EXISTING RESUME CONTENT:
+        ${existingContent || "None provided. Generate from profile data only."}
+
+        HARD NEGATIVE CONSTRAINTS (VIOLATION = FAILURE):
+        1. DO NOT use the 'fontspec' package.
+        2. DO NOT use 'xeletter', 'fontencoding', or any package requiring XeTeX/LuaTeX.
+        3. DO NOT use '\setmainfont', '\setsansfont', or '\setmonofont'.
+        4. DO NOT use UTF-8 characters that require modern engines (e.g., special icons/glyphs). Use standard LaTeX commands (e.g., \\textbullet).
+        5. The generated code MUST compile with 'pdflatex'.
+
+        MANDATORY LATEX SKELETON:
+        Use this structure:
+        \\documentclass[11pt,a4paper]{article}
+        \\usepackage[utf8]{inputenc}
+        \\usepackage[T1]{fontenc}
+        \\usepackage[margin=0.75in]{geometry}
+        \\usepackage{titlesec}
+        \\usepackage{enumitem}
+        \\usepackage{hyperref}
+        \\usepackage{xcolor}
+        \\usepackage{charter} % Safe pdflatex font
+        ... (rest of the content) ...
+
+        TASKS:
+        1. **Intelligent Merging**: Supplement missing sections from Profile Data while matching the JD.
+        2. **Optimization**: Increase keyword density for the JD using strong action verbs.
+        3. **ATS Compliance**: Ensure the output is fully ATS-compliant.
+
+        CRITICAL OUTPUT INSTRUCTIONS:
+        1. Provide the analysis in valid JSON format ONLY.
+        2. Provide the full optimized LaTeX code in a separate block.
+        3. FORMAT:
+           - First block: \`\`\`json { ... } \`\`\`
+           - Second block: \`\`\`latex { ... } \`\`\`
+
+        JSON STRUCTURE:
         {
           "atsScore": number (0-100),
           "sectionScores": {
-            "skills": number (0-100),
-            "experience": number (0-100),
-            "education": number (0-100),
-            "formatting": number (0-100)
+            "skills": number (0-100), "experience": number (0-100), "education": number (0-100), "formatting": number (0-100)
           },
           "missingKeywords": string[],
-          "feedback": "Detailed feedback string"
+          "feedback": "Detailed feedback",
+          "usingProfileData": boolean
         }
-      `;
+        `;
 
       // GROQ API IMPLEMENTATION
       const completion = await groq.chat.completions.create({
         model: "llama-3.3-70b-versatile",
         messages: [{ role: "user", content: prompt }],
-        temperature: 0.1, // Lower temperature for more consistent JSON
+        temperature: 0.1,
         max_completion_tokens: 8192,
         top_p: 1,
         stop: null,
@@ -158,69 +203,56 @@ export async function registerRoutes(
       let result;
       let optimizedLatex = "";
 
-      // Robust Parsing Strategy: Separate Blocks
-
-      // 1. Extract JSON
+      // Extraction
       const jsonBlockMatch = content.match(/```json\n([\s\S]*?)\n```/);
       if (jsonBlockMatch) {
-        try {
-          result = JSON.parse(jsonBlockMatch[1]);
-        } catch (e) {
-          console.error("Failed to parse JSON from code block:", e);
-        }
+        try { result = JSON.parse(jsonBlockMatch[1]); } catch (e) { console.error("JSON Parse error:", e); }
       }
 
-      // Fallback for JSON if no code block
       if (!result) {
         const firstBrace = content.indexOf('{');
         const lastBrace = content.lastIndexOf('}');
-        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-          // We need to be careful not to capture the latex block if it has braces
-          // But usually the JSON is first.
-          const jsonString = content.substring(firstBrace, lastBrace + 1);
-          try {
-            result = JSON.parse(jsonString);
-          } catch (e) { /* ignore */ }
+        if (firstBrace !== -1 && lastBrace !== -1) {
+          try { result = JSON.parse(content.substring(firstBrace, lastBrace + 1)); } catch (e) { /* ignore */ }
         }
       }
 
-      // 2. Extract LaTeX
       const latexBlockMatch = content.match(/```latex\n([\s\S]*?)\n```/);
       if (latexBlockMatch) {
         optimizedLatex = latexBlockMatch[1];
       } else {
-        // Fallback: try to find \documentclass until end of string or next code block
         const latexStart = content.indexOf('\\documentclass');
         if (latexStart !== -1) {
-          // rough extraction if code block is missing
-          optimizedLatex = content.substring(latexStart);
-          // Clean up if there are trailing backticks
-          optimizedLatex = optimizedLatex.replace(/```$/, '');
+          optimizedLatex = content.substring(latexStart).replace(/```$/, '');
         }
       }
 
-      if (!result) {
-        console.error("Failed to parse JSON from Groq. Raw content:", content);
-        throw new Error("Invalid JSON response from AI");
+      if (!result) throw new Error("Invalid AI response");
+
+      // Save or update
+      let targetResumeId = resumeId;
+      if (!targetResumeId) {
+        // Create a new resume record for Case 1
+        const newResume = await storage.createResume({
+          userId,
+          title: `Optimized: ${resumeTitle}`,
+          content: existingContent || "Generated from profile",
+          originalFilename: "profile_generated.pdf"
+        });
+        targetResumeId = newResume.id;
       }
 
-      // Merge latex into result
-      result.optimizedLatex = optimizedLatex;
-
-      // Save result
-      const updatedResume = await storage.updateResumeAnalysis(
-        resumeId,
+      await storage.updateResumeAnalysis(
+        targetResumeId,
         result.atsScore || 0,
         result,
         optimizedLatex || ""
       );
 
       res.json({
-        atsScore: result.atsScore,
-        sectionScores: result.sectionScores,
-        missingKeywords: result.missingKeywords,
-        feedback: result.feedback,
-        optimizedLatex: result.optimizedLatex || "",
+        ...result,
+        optimizedLatex: optimizedLatex || "",
+        resumeId: targetResumeId
       });
 
     } catch (err) {
@@ -232,7 +264,9 @@ export async function registerRoutes(
   // Jobs
   app.get(api.jobs.list.path, checkAuth, async (req, res) => {
     const userId = req.user!.id; // Authenticated user
-    const jobs = await storage.getUserJobs(userId);
+    const limitCount = req.query.limit ? parseInt(req.query.limit as string) : undefined;
+    const summary = req.query.summary === "true";
+    const jobs = await storage.getUserJobs(userId, limitCount, summary);
     res.json(jobs);
   });
 
@@ -302,6 +336,439 @@ export async function registerRoutes(
     // For this MVP, we'll just return these mocks and save them if they don't exist
     // Simulating "fetching"
     res.json(mockJobs);
+  });
+
+  // Job Seekers Section
+  app.get("/api/jobs/discovery", checkAuth, async (req, res) => {
+    try {
+      const filters = {
+        q: req.query.q as string,
+        experience: req.query.experience as string,
+        location: req.query.location as string,
+        type: req.query.type as string,
+        time: req.query.time as string,
+        startupOnly: req.query.startupOnly === "true",
+        roleCategory: req.query.roleCategory as string
+      };
+
+      const jobs = await JobService.searchJobs(req.user!.id, filters);
+      res.json(jobs);
+    } catch (error) {
+      console.error("Discovery jobs error:", error);
+      res.status(500).json({ message: "Failed to fetch discovery jobs" });
+    }
+  });
+
+  app.get("/api/jobs/recommendations", checkAuth, async (req, res) => {
+    try {
+      const recommendations = await JobService.getRecommendations(req.user!.id);
+      res.json(recommendations);
+    } catch (error) {
+      console.error("Recommendations error:", error);
+      res.status(500).json({ message: "Failed to fetch recommendations" });
+    }
+  });
+
+  app.get("/api/jobs/saved", checkAuth, async (req, res) => {
+    try {
+      const saved = await storage.getSavedJobs(req.user!.id);
+      res.json(saved);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch saved jobs" });
+    }
+  });
+
+  // ─── Helper: resolve job details from cache OR client-provided fallback ──────
+  async function resolveJob(jobId: string, clientJobData: any) {
+    const allDiscoveryJobs = await JobService.getMockDiscoveryJobs();
+    const fromCache = allDiscoveryJobs.find((j: any) => j.id === jobId);
+    return fromCache ?? clientJobData ?? null;
+  }
+
+  // ─── SAVE / BOOKMARK ── status always = "new" ────────────────────────────────
+  app.post("/api/jobs/save", checkAuth, async (req, res) => {
+    try {
+      const { jobId, jobData: clientJobData } = req.body;
+      const userId = req.user!.id;
+      const discoveryJob = await resolveJob(jobId, clientJobData);
+      if (!discoveryJob) return res.status(404).json({ message: "Job not found." });
+
+      const existingJobs = await storage.getUserJobs(userId);
+      const alreadyTracked = existingJobs.find(j =>
+        (discoveryJob.url && j.url === discoveryJob.url) ||
+        (j.title?.toLowerCase() === discoveryJob.title?.toLowerCase() &&
+          j.company?.toLowerCase() === discoveryJob.company?.toLowerCase())
+      );
+
+      if (alreadyTracked) {
+        if (alreadyTracked.status === "new") {
+          return res.status(200).json({ message: "Already in Wishlist", id: alreadyTracked.id, alreadyExisted: true });
+        }
+        // Downgrade "applied" → "new" when user bookmarks again
+        await storage.updateJob(alreadyTracked.id, { status: "new" });
+        return res.status(200).json({ message: "Moved to Wishlist", id: alreadyTracked.id, alreadyExisted: true, statusChanged: true });
+      }
+
+      const jobRecord = insertJobSchema.parse({
+        userId,
+        title: discoveryJob.title,
+        company: discoveryJob.company,
+        location: discoveryJob.location || "Remote",
+        description: discoveryJob.description || "",
+        skills: discoveryJob.skills || "",
+        experienceRequired: discoveryJob.experienceRequired || "N/A",
+        source: discoveryJob.source || "Job Seekers",
+        url: discoveryJob.url || "",
+        status: "new",            // ← ALWAYS "new" for Bookmark/Save
+        postedDate: discoveryJob.postedDate || new Date().toLocaleDateString(),
+        employmentType: discoveryJob.employmentType || "Full-time"
+      });
+
+      const newJob = await storage.createJob(jobRecord);
+      res.status(201).json({ ...newJob, alreadyExisted: false });
+    } catch (error) {
+      console.error("[Save] error:", error);
+      res.status(500).json({ message: "Failed to save job" });
+    }
+  });
+
+  // ─── APPLY NOW ── status always = "applied" ──────────────────────────────────
+  app.post("/api/jobs/apply", checkAuth, async (req, res) => {
+    try {
+      const { jobId, jobData: clientJobData } = req.body;
+      const userId = req.user!.id;
+      const discoveryJob = await resolveJob(jobId, clientJobData);
+      if (!discoveryJob) return res.status(404).json({ message: "Job not found." });
+
+      const appliedDate = new Date().toISOString();
+      const existingJobs = await storage.getUserJobs(userId);
+      const alreadyTracked = existingJobs.find(j =>
+        (discoveryJob.url && j.url === discoveryJob.url) ||
+        (j.title?.toLowerCase() === discoveryJob.title?.toLowerCase() &&
+          j.company?.toLowerCase() === discoveryJob.company?.toLowerCase())
+      );
+
+      if (alreadyTracked) {
+        if (alreadyTracked.status !== "applied") {
+          // Upgrade saved/wishlist → applied
+          await storage.updateJob(alreadyTracked.id, { status: "applied", appliedDate });
+          return res.status(200).json({ message: "Moved to Applied", id: alreadyTracked.id, alreadyExisted: true, statusChanged: true });
+        }
+        return res.status(200).json({ message: "Already Applied", id: alreadyTracked.id, alreadyExisted: true, statusChanged: false });
+      }
+
+      const jobRecord = insertJobSchema.parse({
+        userId,
+        title: discoveryJob.title,
+        company: discoveryJob.company,
+        location: discoveryJob.location || "Remote",
+        description: discoveryJob.description || "",
+        skills: discoveryJob.skills || "",
+        experienceRequired: discoveryJob.experienceRequired || "N/A",
+        source: discoveryJob.source || "Job Seekers",
+        url: discoveryJob.url || "",
+        status: "applied",        // ← ALWAYS "applied" for Apply Now
+        appliedDate,
+        postedDate: discoveryJob.postedDate || new Date().toLocaleDateString(),
+        employmentType: discoveryJob.employmentType || "Full-time"
+      });
+
+      const newJob = await storage.createJob(jobRecord);
+      res.status(201).json({ ...newJob, appliedDate, alreadyExisted: false });
+    } catch (error) {
+      console.error("[Apply] error:", error);
+      res.status(500).json({ message: "Failed to apply for job" });
+    }
+  });
+
+
+  app.delete("/api/jobs/saved/:id", checkAuth, async (req, res) => {
+    try {
+      await storage.unsaveJob(req.user!.id, req.params.id as string);
+      res.json({ message: "Unsaved successfully" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to unsave job" });
+    }
+  });
+
+  // Interview Routes
+  app.post("/api/interviews", checkAuth, async (req, res) => {
+    try {
+      const user = req.user!;
+      const { domain, difficulty, questionCount, type } = req.body;
+
+      // Create interview record
+      const interviewData = insertInterviewSchema.parse({
+        userId: user.id,
+        domain,
+        difficulty,
+        type: type || "technical",
+        questionCount: Number(questionCount) || 5,
+        status: "in-progress"
+      });
+
+      const interview = await storage.createInterview(interviewData);
+
+      // Generate questions via AI
+      const questionsData = await generateInterviewQuestions(domain, difficulty, interview.questionCount);
+
+      // Save questions to DB
+      const savedQuestions = [];
+      for (let i = 0; i < questionsData.length; i++) {
+        const q = questionsData[i];
+        const savedQ = await storage.addQuestion({
+          interviewId: interview.id,
+          question: q.question,
+          type: q.type || "technical",
+          expectedAnswer: q.expectedAnswer,
+          order: i + 1
+        });
+        savedQuestions.push(savedQ);
+      }
+
+      res.status(201).json({ interview, questions: savedQuestions });
+    } catch (error) {
+      console.error("Create interview error:", error);
+      res.status(500).json({ message: "Failed to create interview" });
+    }
+  });
+
+  app.get("/api/interviews/:id", checkAuth, async (req, res) => {
+    try {
+      const interviewId = req.params.id as string;
+      const interview = await storage.getInterview(interviewId);
+      if (!interview) return res.status(404).json({ message: "Interview not found" });
+
+      const questions = await storage.getInterviewQuestions(interview.id);
+      res.json({ interview, questions });
+    } catch (error) {
+      console.error("Get interview error:", error);
+      res.status(500).json({ message: "Failed to fetch interview" });
+    }
+  });
+
+  app.post("/api/interviews/:id/responses", checkAuth, upload.single("audio"), async (req, res) => {
+    try {
+      const interviewId = req.params.id as string;
+      const { userTranscript } = req.body;
+      const questionId = req.body.questionId as string;
+      let finalTranscript = userTranscript || "";
+
+      // Handle Audio Upload if present
+      let audioUrl = ""; // In a real app, upload to cloud storage
+      if (req.file) {
+        const tempPath = path.join(os.tmpdir(), `audio-${Date.now()}.webm`);
+        fs.writeFileSync(tempPath, req.file.buffer);
+        try {
+          // Transcribe
+          const transcribedText = await transcribeAudio(tempPath);
+          if (transcribedText) {
+            finalTranscript = transcribedText;
+          }
+        } finally {
+          fs.unlinkSync(tempPath);
+        }
+      }
+
+      const questionData = await storage.getInterviewQuestions(interviewId);
+      const question = questionData.find(q => q.id === questionId);
+      if (!question) return res.status(404).json({ message: "Question not found" });
+
+      // Evaluate
+      const evaluation = await evaluateAnswer(question.question, finalTranscript);
+
+      // Save Response
+      const responseData = {
+        interviewId,
+        questionId,
+        userAudioUrl: audioUrl, // Placeholder
+        userTranscript: finalTranscript,
+        aiFeedbackJson: evaluation,
+        metricsJson: {} // Placeholder for frontend metrics if sent
+      };
+
+      const response = await storage.addResponse(responseData);
+
+      res.status(201).json(response);
+    } catch (error) {
+      console.error("Submit response error:", error);
+      res.status(500).json({ message: "Failed to submit response" });
+    }
+  });
+
+  app.get("/api/interviews/:id/results", checkAuth, async (req, res) => {
+    try {
+      const interviewId = req.params.id as string;
+      const interview = await storage.getInterview(interviewId);
+      if (!interview) return res.status(404).json({ message: "Interview not found" });
+
+      const responses = await storage.getInterviewResponses(interviewId);
+
+      // Calculate aggregates
+      let totalScore = 0;
+      let totalCommunication = 0;
+      let totalTechnical = 0;
+      const count = responses.length;
+
+      if (count > 0) {
+        responses.forEach(r => {
+          const fb = r.aiFeedbackJson as any;
+          totalScore += fb?.score || 0;
+          totalCommunication += fb?.clarity || 0;
+          totalTechnical += fb?.technicalAccuracy || 0;
+        });
+      }
+
+      const aggregates = {
+        overallScore: count ? Math.round(totalScore / count) : 0,
+        communicationScore: count ? Math.round(totalCommunication / count) : 0,
+        technicalScore: count ? Math.round(totalTechnical / count) : 0,
+        questionsAnswered: count
+      };
+
+      res.json({ interview, responses, aggregates });
+    } catch (error) {
+      console.error("Get results error:", error);
+      res.status(500).json({ message: "Failed to fetch results" });
+    }
+  });
+
+  app.get("/api/dashboard/stats", checkAuth, async (req, res) => {
+    try {
+      const stats = await storage.getDashboardStats(req.user!.id);
+      res.json(stats);
+    } catch (error) {
+      console.error("Dashboard stats error:", error);
+      res.status(500).json({ message: "Failed to fetch dashboard stats" });
+    }
+  });
+
+  // Profile / Account Routes
+  app.get(api.profile.getFull.path, checkAuth, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const profile = await storage.getFullProfile(userId);
+      res.json(profile);
+    } catch (error) {
+      console.error("Get profile error:", error);
+      res.status(500).json({ message: "Failed to fetch profile" });
+    }
+  });
+
+  app.patch(api.profile.personalInfo.update.path, checkAuth, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const data = req.body;
+      const updated = await storage.updatePersonalInfo(userId, { ...data, userId });
+      res.json(updated);
+    } catch (error) {
+      console.error("Update personal info error:", error);
+      res.status(500).json({ message: "Failed to update personal info" });
+    }
+  });
+
+  // Education
+  app.get(api.profile.education.list.path, checkAuth, async (req, res) => {
+    const list = await storage.getEducation(req.user!.id);
+    res.json(list);
+  });
+  app.post(api.profile.education.add.path, checkAuth, async (req, res) => {
+    const data = await storage.addEducation({ ...req.body, userId: req.user!.id });
+    res.status(201).json(data);
+  });
+  app.patch(api.profile.education.update.path, checkAuth, async (req, res) => {
+    const data = await storage.updateEducation(req.params.id as string, req.body);
+    res.json(data);
+  });
+  app.delete(api.profile.education.delete.path, checkAuth, async (req, res) => {
+    await storage.deleteEducation(req.params.id as string);
+    res.json({ message: "Deleted" });
+  });
+
+  // Experience
+  app.get(api.profile.experience.list.path, checkAuth, async (req, res) => {
+    const list = await storage.getExperience(req.user!.id);
+    res.json(list);
+  });
+  app.post(api.profile.experience.add.path, checkAuth, async (req, res) => {
+    const data = await storage.addExperience({ ...req.body, userId: req.user!.id });
+    res.status(201).json(data);
+  });
+  app.patch(api.profile.experience.update.path, checkAuth, async (req, res) => {
+    const data = await storage.updateExperience(req.params.id as string, req.body);
+    res.json(data);
+  });
+  app.delete(api.profile.experience.delete.path, checkAuth, async (req, res) => {
+    await storage.deleteExperience(req.params.id as string);
+    res.json({ message: "Deleted" });
+  });
+
+  // Projects
+  app.get(api.profile.projects.list.path, checkAuth, async (req, res) => {
+    const list = await storage.getProjects(req.user!.id);
+    res.json(list);
+  });
+  app.post(api.profile.projects.add.path, checkAuth, async (req, res) => {
+    const data = await storage.addProject({ ...req.body, userId: req.user!.id });
+    res.status(201).json(data);
+  });
+  app.patch(api.profile.projects.update.path, checkAuth, async (req, res) => {
+    const data = await storage.updateProject(req.params.id as string, req.body);
+    res.json(data);
+  });
+  app.delete(api.profile.projects.delete.path, checkAuth, async (req, res) => {
+    await storage.deleteProject(req.params.id as string);
+    res.json({ message: "Deleted" });
+  });
+
+  // Skills
+  app.get(api.profile.skills.list.path, checkAuth, async (req, res) => {
+    const list = await storage.getSkills(req.user!.id);
+    res.json(list);
+  });
+  app.post(api.profile.skills.add.path, checkAuth, async (req, res) => {
+    const data = await storage.addSkill({ ...req.body, userId: req.user!.id });
+    res.status(201).json(data);
+  });
+  app.delete(api.profile.skills.delete.path, checkAuth, async (req, res) => {
+    await storage.deleteSkill(req.params.id as string);
+    res.json({ message: "Deleted" });
+  });
+
+  // Certifications
+  app.get(api.profile.certifications.list.path, checkAuth, async (req, res) => {
+    const list = await storage.getCertifications(req.user!.id);
+    res.json(list);
+  });
+  app.post(api.profile.certifications.add.path, checkAuth, async (req, res) => {
+    const data = await storage.addCertification({ ...req.body, userId: req.user!.id });
+    res.status(201).json(data);
+  });
+  app.patch(api.profile.certifications.update.path, checkAuth, async (req, res) => {
+    const data = await storage.updateCertification(req.params.id as string, req.body);
+    res.json(data);
+  });
+  app.delete(api.profile.certifications.delete.path, checkAuth, async (req, res) => {
+    await storage.deleteCertification(req.params.id as string);
+    res.json({ message: "Deleted" });
+  });
+
+  // Achievements
+  app.get(api.profile.achievements.list.path, checkAuth, async (req, res) => {
+    const list = await storage.getAchievements(req.user!.id);
+    res.json(list);
+  });
+  app.post(api.profile.achievements.add.path, checkAuth, async (req, res) => {
+    const data = await storage.addAchievement({ ...req.body, userId: req.user!.id });
+    res.status(201).json(data);
+  });
+  app.patch(api.profile.achievements.update.path, checkAuth, async (req, res) => {
+    const data = await storage.updateAchievement(req.params.id as string, req.body);
+    res.json(data);
+  });
+  app.delete(api.profile.achievements.delete.path, checkAuth, async (req, res) => {
+    await storage.deleteAchievement(req.params.id as string);
+    res.json({ message: "Deleted" });
   });
 
   // Seed Data

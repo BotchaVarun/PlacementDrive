@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { setupApp, log, app, httpServer } from "./app.js";
 import { serveStatic } from "./static.js";
 

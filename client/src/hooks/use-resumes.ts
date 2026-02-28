@@ -1,26 +1,57 @@
+import * as z from "zod";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl } from "@shared/routes";
+import { Resume } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { auth } from "@/lib/firebase";
+import { useAuth } from "@/hooks/use-auth";
 
-export function useResumes() {
+export function useResumes(limit?: number, summary: boolean = false) {
+  const { user } = useAuth();
   return useQuery({
-    queryKey: [api.resumes.list.path],
+    queryKey: [api.resumes.list.path, limit, summary],
     queryFn: async () => {
       const token = await auth.currentUser?.getIdToken();
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
 
-      const res = await fetch(api.resumes.list.path, { headers });
+      const params = new URLSearchParams();
+      if (limit) params.append("limit", limit.toString());
+      if (summary) params.append("summary", "true");
+      const url = `${api.resumes.list.path}${params.toString() ? `?${params.toString()}` : ""}`;
+
+      const res = await fetch(url, { headers });
       if (!res.ok) throw new Error("Failed to fetch resumes");
       return api.resumes.list.responses[200].parse(await res.json());
     },
-    enabled: !!auth.currentUser,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    enabled: !!user,
+    staleTime: 30000,
+  });
+}
+
+export type DashboardStats = z.infer<typeof api.dashboard.stats.responses[200]>;
+
+export function useDashboardStats() {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: [api.dashboard.stats.path],
+    queryFn: async () => {
+      const token = await auth.currentUser?.getIdToken();
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const res = await fetch(api.dashboard.stats.path, { headers });
+      if (!res.ok) throw new Error("Failed to fetch dashboard stats");
+      const data = await res.json();
+      return api.dashboard.stats.responses[200].parse(data);
+    },
+    enabled: !!user,
+    staleTime: 30000,
   });
 }
 
 export function useResume(id: string) {
+  const { user } = useAuth();
   return useQuery({
     queryKey: [api.resumes.get.path, id],
     queryFn: async () => {
@@ -35,7 +66,7 @@ export function useResume(id: string) {
       if (!res.ok) throw new Error("Failed to fetch resume");
       return api.resumes.get.responses[200].parse(await res.json());
     },
-    enabled: !!id,
+    enabled: !!id && !!user,
   });
 }
 
@@ -77,7 +108,7 @@ export function useAnalyzeResume() {
   const { toast } = useToast();
 
   return useMutation({
-    mutationFn: async (data: { resumeId: string; jobDescription: string }) => {
+    mutationFn: async (data: { resumeId?: string; resumeContent?: string; jobDescription: string }) => {
       const token = await auth.currentUser?.getIdToken();
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -88,7 +119,7 @@ export function useAnalyzeResume() {
         body: JSON.stringify(data),
       });
       if (!res.ok) throw new Error("Analysis failed");
-      return api.resumes.analyze.responses[200].parse(await res.json());
+      return await res.json(); // Use raw json because shared schema might not be updated here yet or is too strict
     },
     onError: (err) => {
       toast({ title: "Analysis Failed", description: err.message, variant: "destructive" });

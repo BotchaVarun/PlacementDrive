@@ -47,7 +47,8 @@ export const api = {
       method: 'POST' as const,
       path: '/api/resumes/analyze' as const,
       input: z.object({
-        resumeId: z.string(),
+        resumeId: z.string().optional(),
+        resumeContent: z.string().optional(),
         jobDescription: z.string(),
       }),
       responses: {
@@ -117,6 +118,220 @@ export const api = {
       responses: {
         200: z.object({ message: z.string() }),
         404: errorSchemas.notFound,
+      },
+    },
+  },
+  profile: {
+    getFull: {
+      method: 'GET' as const,
+      path: '/api/profile' as const,
+      responses: {
+        200: z.any(),
+      },
+    },
+    personalInfo: {
+      update: {
+        method: 'PATCH' as const,
+        path: '/api/profile/personal-info' as const,
+        responses: {
+          200: z.any(),
+        },
+      },
+    },
+    education: {
+      list: {
+        method: 'GET' as const,
+        path: '/api/profile/education' as const,
+        responses: {
+          200: z.array(z.any()),
+        },
+      },
+      add: {
+        method: 'POST' as const,
+        path: '/api/profile/education' as const,
+        responses: {
+          201: z.any(),
+        },
+      },
+      update: {
+        method: 'PATCH' as const,
+        path: '/api/profile/education/:id' as const,
+        responses: {
+          200: z.any(),
+        },
+      },
+      delete: {
+        method: 'DELETE' as const,
+        path: '/api/profile/education/:id' as const,
+        responses: {
+          200: z.any(),
+        },
+      },
+    },
+    experience: {
+      list: {
+        method: 'GET' as const,
+        path: '/api/profile/experience' as const,
+        responses: {
+          200: z.array(z.any()),
+        },
+      },
+      add: {
+        method: 'POST' as const,
+        path: '/api/profile/experience' as const,
+        responses: {
+          201: z.any(),
+        },
+      },
+      update: {
+        method: 'PATCH' as const,
+        path: '/api/profile/experience/:id' as const,
+        responses: {
+          200: z.any(),
+        },
+      },
+      delete: {
+        method: 'DELETE' as const,
+        path: '/api/profile/experience/:id' as const,
+        responses: {
+          200: z.any(),
+        },
+      },
+    },
+    projects: {
+      list: {
+        method: 'GET' as const,
+        path: '/api/profile/projects' as const,
+        responses: {
+          200: z.array(z.any()),
+        },
+      },
+      add: {
+        method: 'POST' as const,
+        path: '/api/profile/projects' as const,
+        responses: {
+          201: z.any(),
+        },
+      },
+      update: {
+        method: 'PATCH' as const,
+        path: '/api/profile/projects/:id' as const,
+        responses: {
+          200: z.any(),
+        },
+      },
+      delete: {
+        method: 'DELETE' as const,
+        path: '/api/profile/projects/:id' as const,
+        responses: {
+          200: z.any(),
+        },
+      },
+    },
+    skills: {
+      list: {
+        method: 'GET' as const,
+        path: '/api/profile/skills' as const,
+        responses: {
+          200: z.array(z.any()),
+        },
+      },
+      add: {
+        method: 'POST' as const,
+        path: '/api/profile/skills' as const,
+        responses: {
+          201: z.any(),
+        },
+      },
+      delete: {
+        method: 'DELETE' as const,
+        path: '/api/profile/skills/:id' as const,
+        responses: {
+          200: z.any(),
+        },
+      },
+    },
+    certifications: {
+      list: {
+        method: 'GET' as const,
+        path: '/api/profile/certifications' as const,
+        responses: {
+          200: z.array(z.any()),
+        },
+      },
+      add: {
+        method: 'POST' as const,
+        path: '/api/profile/certifications' as const,
+        responses: {
+          201: z.any(),
+        },
+      },
+      update: {
+        method: 'PATCH' as const,
+        path: '/api/profile/certifications/:id' as const,
+        responses: {
+          200: z.any(),
+        },
+      },
+      delete: {
+        method: 'DELETE' as const,
+        path: '/api/profile/certifications/:id' as const,
+        responses: {
+          200: z.any(),
+        },
+      },
+    },
+    achievements: {
+      list: {
+        method: 'GET' as const,
+        path: '/api/profile/achievements' as const,
+        responses: {
+          200: z.array(z.any()),
+        },
+      },
+      add: {
+        method: 'POST' as const,
+        path: '/api/profile/achievements' as const,
+        responses: {
+          201: z.any(),
+        },
+      },
+      update: {
+        method: 'PATCH' as const,
+        path: '/api/profile/achievements/:id' as const,
+        responses: {
+          200: z.any(),
+        },
+      },
+      delete: {
+        method: 'DELETE' as const,
+        path: '/api/profile/achievements/:id' as const,
+        responses: {
+          200: z.any(),
+        },
+      },
+    },
+  },
+  dashboard: {
+    stats: {
+      method: 'GET' as const,
+      path: '/api/dashboard/stats' as const,
+      responses: {
+        200: z.object({
+          totalJobs: z.number(),
+          activeApplications: z.number(),
+          interviewCount: z.number(),
+          resumesCount: z.number(),
+          recentResumes: z.array(z.custom<typeof resumes.$inferSelect>()),
+          jobPipeline: z.object({
+            new: z.number(),
+            applied: z.number(),
+            interview: z.number(),
+            offer: z.number(),
+            rejected: z.number(),
+          }),
+          avgAtsScore: z.number(),
+        }),
       },
     },
   }

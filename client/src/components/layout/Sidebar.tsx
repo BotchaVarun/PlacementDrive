@@ -1,10 +1,11 @@
 import { Link, useLocation } from "wouter";
-import { 
-  LayoutDashboard, 
-  FileText, 
-  Briefcase, 
-  Video, 
+import {
+  LayoutDashboard,
+  FileText,
+  Briefcase,
+  Video,
   LogOut,
+  UserCircle,
   Sparkles
 } from "lucide-react";
 import { auth } from "@/lib/firebase";
@@ -16,8 +17,10 @@ export function Sidebar() {
   const navItems = [
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
     { href: "/enhance", label: "Resume Enhancer", icon: Sparkles },
+    { href: "/discover", label: "Job Seekers", icon: Briefcase },
     { href: "/jobs", label: "Job Tracker", icon: Briefcase },
     { href: "/mock", label: "Mock Interviews", icon: Video },
+    { href: "/account", label: "Account", icon: UserCircle },
   ];
 
   return (
@@ -33,14 +36,14 @@ export function Sidebar() {
         {navItems.map((item) => {
           const isActive = location === item.href;
           const Icon = item.icon;
-          
+
           return (
             <Link key={item.href} href={item.href}>
               <div
                 className={`
                   flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer transition-all duration-200
-                  ${isActive 
-                    ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20 font-medium" 
+                  ${isActive
+                    ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20 font-medium"
                     : "text-muted-foreground hover:bg-secondary hover:text-foreground"
                   }
                 `}
@@ -54,8 +57,8 @@ export function Sidebar() {
       </nav>
 
       <div className="p-4 border-t border-border">
-        <Button 
-          variant="outline" 
+        <Button
+          variant="outline"
           className="w-full justify-start gap-2 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/20"
           onClick={() => auth.signOut()}
         >

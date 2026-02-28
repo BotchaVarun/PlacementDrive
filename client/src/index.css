@@ -74,11 +74,18 @@
   * {
     @apply border-border;
   }
+
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-body);
   }
-  h1, h2, h3, h4, h5, h6 {
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
     font-family: var(--font-display);
     @apply tracking-tight;
   }
@@ -89,12 +96,88 @@
   width: 8px;
   height: 8px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
   @apply bg-muted-foreground/20 rounded-full;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   @apply bg-muted-foreground/40;
+}
+
+/* ── Job Description HTML Renderer ──────────────────────────────── */
+.job-desc {
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.job-desc p {
+  margin-bottom: 0.75rem;
+}
+
+.job-desc h1 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.job-desc h2 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.job-desc h3 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-top: 1rem;
+  margin-bottom: 0.35rem;
+}
+
+.job-desc ul {
+  list-style-type: disc;
+  padding-left: 1.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.job-desc ol {
+  list-style-type: decimal;
+  padding-left: 1.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.job-desc li {
+  margin-bottom: 0.25rem;
+}
+
+.job-desc strong,
+.job-desc b {
+  font-weight: 600;
+}
+
+.job-desc em,
+.job-desc i {
+  font-style: italic;
+}
+
+.job-desc hr {
+  border: none;
+  border-top: 1px solid hsl(var(--border));
+  margin: 1rem 0;
+}
+
+.job-desc a {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.job-desc a:hover {
+  opacity: 0.8;
 }

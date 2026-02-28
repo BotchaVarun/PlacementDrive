@@ -9,6 +9,12 @@ import Dashboard from "@/pages/Dashboard";
 import ResumeEnhancer from "@/pages/ResumeEnhancer";
 import JobTracker from "@/pages/JobTracker";
 import MockInterviews from "@/pages/MockInterviews";
+import InterviewSetup from "@/pages/interview-setup";
+import InterviewLive from "@/pages/interview-live";
+import InterviewResults from "@/pages/interview-results";
+import JobSeekers from "@/pages/JobSeekers";
+
+import Account from "@/pages/Account";
 
 function Router() {
   return (
@@ -17,7 +23,11 @@ function Router() {
       <Route path="/" component={Dashboard} />
       <Route path="/enhance" component={ResumeEnhancer} />
       <Route path="/jobs" component={JobTracker} />
-      <Route path="/mock" component={MockInterviews} />
+      <Route path="/mock" component={InterviewSetup} />
+      <Route path="/mock/:id" component={InterviewLive} />
+      <Route path="/mock/:id/results" component={InterviewResults} />
+      <Route path="/account" component={Account} />
+      <Route path="/discover" component={JobSeekers} />
       <Route component={NotFound} />
     </Switch>
   );
