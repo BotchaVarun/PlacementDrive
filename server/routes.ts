@@ -116,7 +116,8 @@ export async function registerRoutes(
 
       // Fetch profile data
       const userProfile = await storage.getFullProfile(userId);
-      const profileString = JSON.stringify(userProfile, null, 2);
+      // Minify JSON to save tokens
+      const profileString = JSON.stringify(userProfile);
 
       let existingContent = resumeContent || "";
       let resumeTitle = "Generated Resume";
@@ -129,6 +130,15 @@ export async function registerRoutes(
         }
       }
 
+      // Aggresively truncate inputs to avoid Groq TPM Rate Limits (12,000 Total)
+      const MAX_JD_CHARS = 1500;
+      const MAX_PROFILE_CHARS = 2000;
+      const MAX_RESUME_CHARS = 3000;
+
+      const truncatedJd = jobDescription ? jobDescription.substring(0, MAX_JD_CHARS) : "";
+      const truncatedProfile = profileString.length > MAX_PROFILE_CHARS ? profileString.substring(0, MAX_PROFILE_CHARS) + "..." : profileString;
+      const truncatedContent = existingContent ? existingContent.substring(0, MAX_RESUME_CHARS) + "..." : "";
+
       // Call OpenAI
       const prompt = `
         You are an advanced AI Career Consultant and Resume Engineer. 
@@ -136,13 +146,13 @@ export async function registerRoutes(
 
         CONTEXT:
         - JOB DESCRIPTION:
-        ${jobDescription}
+        ${truncatedJd}
 
         - USER PROFILE DATA:
-        ${profileString}
+        ${truncatedProfile}
 
         - EXISTING RESUME CONTENT:
-        ${existingContent || "None provided. Generate from profile data only."}
+        ${truncatedContent || "None provided. Generate from profile data only."}
 
         HARD NEGATIVE CONSTRAINTS (VIOLATION = FAILURE):
         1. DO NOT use the 'fontspec' package.
@@ -193,7 +203,7 @@ export async function registerRoutes(
         model: "llama-3.3-70b-versatile",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.1,
-        max_completion_tokens: 8192,
+        max_completion_tokens: 2500,
         top_p: 1,
         stop: null,
         stream: false
