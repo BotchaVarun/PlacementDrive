@@ -44,7 +44,7 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { updateProfile } from "firebase/auth";
 import { useAuth } from "@/hooks/use-auth";
 import { Loader2 } from "lucide-react";
-import { api } from "../../shared/routes.js";
+import { api } from "@shared/routes";
 import {
     PersonalInfo,
     Education,
@@ -53,7 +53,7 @@ import {
     Skill,
     Certification,
     Achievement
-} from "../../shared/schema.js";
+} from "@shared/schema";
 
 interface ProfileData {
     personalInfo?: PersonalInfo;
@@ -404,7 +404,7 @@ export default function Account() {
 
 // --- Sub-components (forms and lists) ---
 
-function PersonalInfoForm({ data, onSave, isSaving }: { data: PersonalInfo, onSave: (val: any) => void, isSaving: boolean }) {
+function PersonalInfoForm({ data, onSave, isSaving }: { data?: PersonalInfo, onSave: (val: any) => void, isSaving: boolean }) {
     const [isEditing, setIsEditing] = useState(!data?.fullName);
     const [formData, setFormData] = useState(data || {
         fullName: "",
@@ -1058,7 +1058,8 @@ function ProjectForm({ initialData, onSave, onCancel, isSaving }: { initialData?
 
 function SkillList({ skills }: { skills: Skill[] }) {
     const [newSkill, setNewSkill] = useState("");
-    const [newCategory, setNewCategory] = useState("Technical");
+    type SkillCategory = "Programming Languages" | "Frameworks" | "Tools" | "Databases" | "Soft Skills";
+    const [newCategory, setNewCategory] = useState<SkillCategory>("Programming Languages");
 
     const addMutation = useMutation({
         mutationFn: async (data: Partial<Skill>) => {
@@ -1096,15 +1097,20 @@ function SkillList({ skills }: { skills: Skill[] }) {
                 </div>
                 <div className="w-full md:w-48 space-y-2">
                     <Label className="text-xs font-bold uppercase tracking-wider opacity-60">Category</Label>
-                    <Input
+                    <select
                         value={newCategory}
-                        onChange={(e) => setNewCategory(e.target.value)}
-                        placeholder="Technical"
-                        className="rounded-xl bg-white dark:bg-slate-800"
-                    />
+                        onChange={(e) => setNewCategory(e.target.value as SkillCategory)}
+                        className="w-full flex h-10 rounded-xl border border-input bg-background px-3 py-2 text-sm bg-white dark:bg-slate-800"
+                    >
+                        <option value="Programming Languages">Programming Languages</option>
+                        <option value="Frameworks">Frameworks</option>
+                        <option value="Tools">Tools</option>
+                        <option value="Databases">Databases</option>
+                        <option value="Soft Skills">Soft Skills</option>
+                    </select>
                 </div>
                 <div className="flex items-end">
-                    <Button onClick={() => addMutation.mutate({ name: newSkill, category: newCategory, proficiency: "Intermediate" })} disabled={!newSkill} className="rounded-xl h-10 w-full md:w-auto">
+                    <Button onClick={() => addMutation.mutate({ name: newSkill, category: newCategory })} disabled={!newSkill} className="rounded-xl h-10 w-full md:w-auto">
                         <Plus className="h-4 w-4 mr-2" />
                         Add Skill
                     </Button>
