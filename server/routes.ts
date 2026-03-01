@@ -203,7 +203,7 @@ export async function registerRoutes(
         model: "llama-3.3-70b-versatile",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.1,
-        max_completion_tokens: 2500,
+        max_completion_tokens: 6000,
         top_p: 1,
         stop: null,
         stream: false
