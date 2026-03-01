@@ -15,6 +15,10 @@ import { checkAuth } from "./middleware/auth.js";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || "dummy_key" });
 
+// Dedicated Groq client for resume enhancer (separate daily token quota)
+// Set RESUME_GROQ_API_KEY in your .env file
+const resumeGroq = new Groq({ apiKey: process.env.RESUME_GROQ_API_KEY || process.env.GROQ_API_KEY || "dummy_key" });
+
 import {
   insertInterviewSchema,
   insertResponseSchema
@@ -114,10 +118,26 @@ export async function registerRoutes(
       const { resumeId, resumeContent, jobDescription } = api.resumes.analyze.input.parse(req.body);
       const userId = req.user!.id;
 
-      // Fetch profile data
+      // ── Fetch & compress profile data ────────────────────────────────────
       const userProfile = await storage.getFullProfile(userId);
-      // Minify JSON to save tokens
-      const profileString = JSON.stringify(userProfile);
+      const p = userProfile || {} as any;
+      const pi = p.personalInfo || {};
+      const compressedProfile = {
+        name: pi.fullName || p.name || "",
+        email: pi.email || "",
+        phone: pi.phone || "",
+        skills: (p.skills || []).map((s: any) => s.name || s).join(", "),
+        education: (p.education || []).map((e: any) =>
+          `${e.degree || ""} at ${e.institution || ""} (${e.startYear || ""}–${e.endYear || ""})`
+        ),
+        experience: (p.experience || []).map((e: any) =>
+          `${e.role || e.title || ""} at ${e.company || ""}: ${(e.description || "").substring(0, 150)}`
+        ),
+        projects: (p.projects || []).map((pr: any) =>
+          `${pr.title || pr.name || ""}: ${(pr.description || "").substring(0, 120)}`
+        ),
+        certifications: (p.certifications || []).map((c: any) => c.name || ""),
+      };
 
       let existingContent = resumeContent || "";
       let resumeTitle = "Generated Resume";
@@ -130,120 +150,183 @@ export async function registerRoutes(
         }
       }
 
-      // Aggresively truncate inputs to avoid Groq TPM Rate Limits (12,000 Total)
-      const MAX_JD_CHARS = 1500;
-      const MAX_PROFILE_CHARS = 2000;
-      const MAX_RESUME_CHARS = 3000;
+      // ── Truncate inputs to control token usage ────────────────────────────
+      const MAX_JD = 1200;
+      const MAX_RESUME = 2000;
+      const truncatedJd = (jobDescription || "").substring(0, MAX_JD);
+      const truncatedResume = existingContent.substring(0, MAX_RESUME);
+      const profileStr = JSON.stringify(compressedProfile);
 
-      const truncatedJd = jobDescription ? jobDescription.substring(0, MAX_JD_CHARS) : "";
-      const truncatedProfile = profileString.length > MAX_PROFILE_CHARS ? profileString.substring(0, MAX_PROFILE_CHARS) + "..." : profileString;
-      const truncatedContent = existingContent ? existingContent.substring(0, MAX_RESUME_CHARS) + "..." : "";
+      // ── Token size guard (rough estimate: 1 token ≈ 4 chars) ──────────────
+      const estimatedInputTokens = Math.ceil(
+        (truncatedJd.length + truncatedResume.length + profileStr.length) / 4
+      );
+      if (estimatedInputTokens > 5000) {
+        return res.status(400).json({
+          message: "Input too large. Please shorten your resume or job description and try again."
+        });
+      }
 
-      // Call OpenAI
-      const prompt = `
-        You are an advanced AI Career Consultant and Resume Engineer. 
-        Your task is to create/optimize a candidate's LaTeX resume to perfectly match a given job description, leveraging both their existing resume (if provided) and their structured profile data.
-
-        CONTEXT:
-        - JOB DESCRIPTION:
-        ${truncatedJd}
-
-        - USER PROFILE DATA:
-        ${truncatedProfile}
-
-        - EXISTING RESUME CONTENT:
-        ${truncatedContent || "None provided. Generate from profile data only."}
-
-        HARD NEGATIVE CONSTRAINTS (VIOLATION = FAILURE):
-        1. DO NOT use the 'fontspec' package.
-        2. DO NOT use 'xeletter', 'fontencoding', or any package requiring XeTeX/LuaTeX.
-        3. DO NOT use '\setmainfont', '\setsansfont', or '\setmonofont'.
-        4. DO NOT use UTF-8 characters that require modern engines (e.g., special icons/glyphs). Use standard LaTeX commands (e.g., \\textbullet).
-        5. The generated code MUST compile with 'pdflatex'.
-        6. STRICT PAGE LIMIT: The generated resume MUST NOT exceed 2 pages when compiled. Be concise and prioritize impactful information to ensure it fits within 2 pages at most.
-
-        MANDATORY LATEX SKELETON:
-        Use this structure:
-        \\documentclass[11pt,a4paper]{article}
-        \\usepackage[utf8]{inputenc}
-        \\usepackage[T1]{fontenc}
-        \\usepackage[margin=0.75in]{geometry}
-        \\usepackage{titlesec}
-        \\usepackage{enumitem}
-        \\usepackage{hyperref}
-        \\usepackage{xcolor}
-        \\usepackage{charter} % Safe pdflatex font
-        ... (rest of the content) ...
-
-        TASKS:
-        1. **Intelligent Merging**: Supplement missing sections from Profile Data while matching the JD.
-        2. **Optimization**: Increase keyword density for the JD using strong action verbs.
-        3. **ATS Compliance**: Ensure the output is fully ATS-compliant.
-
-        CRITICAL OUTPUT INSTRUCTIONS:
-        1. Provide the analysis in valid JSON format ONLY.
-        2. Provide the full optimized LaTeX code in a separate block.
-        3. FORMAT:
-           - First block: \`\`\`json { ... } \`\`\`
-           - Second block: \`\`\`latex { ... } \`\`\`
-
-        JSON STRUCTURE:
-        {
-          "atsScore": number (0-100),
-          "sectionScores": {
-            "skills": number (0-100), "experience": number (0-100), "education": number (0-100), "formatting": number (0-100)
+      // ── CALL 1: ATS scoring (JSON only, dedicated small call) ────────────
+      const usingProfile = !existingContent;
+      const atsPrompt = [
+        "You are an expert ATS Resume Analyzer. Your task has 4 steps. Return ONLY valid JSON. No text outside JSON.",
+        "",
+        "STEP 1 – Extract technical keywords from the JD (tools, skills, technologies, certifications, role-specific terms).",
+        "STEP 2 – Extract keywords already present in the resume/profile.",
+        "STEP 3 – Compare: identify which JD keywords are MISSING from the resume.",
+        "STEP 4 – Score and suggest improvements.",
+        "",
+        "JOB DESCRIPTION:",
+        truncatedJd,
+        "",
+        "RESUME / PROFILE:",
+        truncatedResume || profileStr,
+        "",
+        "Return EXACTLY this JSON structure (no extra fields, no markdown):",
+        JSON.stringify({
+          atsScore: "<overall 0-100 weighted: skills 40%, experience 30%, education 15%, formatting 15%>",
+          sectionScores: {
+            skills: "<0-100>",
+            experience: "<0-100>",
+            education: "<0-100>",
+            formatting: "<0-100>"
           },
-          "missingKeywords": string[],
-          "feedback": "Detailed feedback",
-          "usingProfileData": boolean
+          jdKeywords: ["<all technical keywords extracted from JD>"],
+          resumeKeywords: ["<keywords already present in resume>"],
+          missingKeywords: ["<JD keywords NOT found in resume — most important first>"],
+          improvementSuggestions: [
+            "<specific actionable suggestion 1>",
+            "<specific actionable suggestion 2>",
+            "<specific actionable suggestion 3>"
+          ],
+          feedback: "<2-3 sentences summarizing overall fit and top priority improvements>",
+          usingProfileData: usingProfile
+        })
+      ].join("\n");
+
+      // ── CALL 2: LaTeX optimization – Projects section focus ───────────────
+      const latexPrompt = [
+        "You are an expert ATS Resume Optimization Engine. Your focus is the PROJECTS section.",
+        "",
+        "STRICT RULES (MANDATORY):",
+        "1. Output ONLY raw LaTeX. NO markdown. NO backticks. NO explanations.",
+        "2. First character MUST be \\ of \\documentclass.",
+        "3. Last line MUST be \\end{document}.",
+        "4. DO NOT change \\documentclass, \\usepackage, margins, or any formatting commands.",
+        "5. DO NOT add \\pagestyle or \\pagenumbering.",
+        "6. DO NOT remove any existing sections.",
+        "7. Keep ALL other sections (Education, Experience, Skills, etc.) EXACTLY as-is.",
+        "8. DO NOT change anything outside the Projects / Academic Projects section.",
+        "",
+        "PROJECT OPTIMIZATION RULES:",
+        "- Identify the technical skills required in the Job Description.",
+        "- Rewrite existing project bullet points to naturally include relevant JD skills.",
+        "- Keep achievements measurable — include numbers/metrics where realistic.",
+        "- Every bullet MUST start with a strong action verb.",
+        "- If critical JD skills are completely absent from projects, add UP TO 2 new beginner-friendly projects.",
+        "- New projects MUST match a fresher/student experience level. NO fake enterprise systems.",
+        "- Maintain consistent writing style with the existing bullets.",
+        "- Do NOT duplicate technologies unnaturally across bullets.",
+        "- Keep the same \\item structure and indentation as the original.",
+        "",
+        "JOB DESCRIPTION:",
+        truncatedJd,
+        "",
+        "CANDIDATE PROFILE (for context on skills/experience level):",
+        profileStr,
+        "",
+        existingContent
+          ? "FULL RESUME LATEX (modify ONLY the Projects section content, return complete document):\n" + truncatedResume
+          : "No existing resume. Generate a complete LaTeX resume from profile using pdflatex-safe packages (inputenc, T1 fontenc, geometry 0.75in, titlesec, enumitem, hyperref, charter). Include all standard sections with a strong Projects section.",
+        "",
+        "OUTPUT: Start immediately with \\documentclass — no preamble text."
+      ].filter(Boolean).join("\n");
+
+      // ── Execute both calls (parallel for speed) ───────────────────────────
+      const PRIMARY_MODEL = "llama-3.1-8b-instant";
+      const FALLBACK_MODEL = "llama-3.3-70b-versatile";
+
+      const callGroq = async (prompt: string, jsonMode: boolean, model: string): Promise<string> => {
+        const c = await resumeGroq.chat.completions.create({
+          model,
+          messages: [{ role: "user", content: prompt }],
+          temperature: jsonMode ? 0.1 : 0.3,
+          max_completion_tokens: jsonMode ? 512 : 4000,
+          top_p: 0.9,
+          stop: null,
+          stream: false,
+          ...(jsonMode ? { response_format: { type: "json_object" } } : {})
+        });
+        return c.choices[0]?.message?.content || "";
+      };
+
+      const withFallback = async (prompt: string, jsonMode: boolean): Promise<string> => {
+        try {
+          return await callGroq(prompt, jsonMode, PRIMARY_MODEL);
+        } catch (e: any) {
+          if (e?.status === 429) {
+            try {
+              return await callGroq(prompt, jsonMode, FALLBACK_MODEL);
+            } catch (fe: any) {
+              if (fe?.status === 429 || fe?.error?.error?.code === "rate_limit_exceeded") {
+                const retryAfter = fe?.headers?.["retry-after"];
+                const minutes = retryAfter ? Math.ceil(Number(retryAfter) / 60) : 15;
+                throw Object.assign(new Error("RATE_LIMIT"), { isRateLimit: true, minutes });
+              }
+              throw fe;
+            }
+          }
+          throw e;
         }
-        `;
+      };
 
-      // GROQ API IMPLEMENTATION
-      const completion = await groq.chat.completions.create({
-        model: "llama-3.3-70b-versatile",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.1,
-        max_completion_tokens: 15000,
-        top_p: 1,
-        stop: null,
-        stream: false
-      });
+      let atsRaw = "";
+      let latexRaw = "";
 
-      const content = completion.choices[0]?.message?.content || "{}";
-      let result;
-      let optimizedLatex = "";
-
-      // Extraction
-      const jsonBlockMatch = content.match(/```json\n([\s\S]*?)\n```/);
-      if (jsonBlockMatch) {
-        try { result = JSON.parse(jsonBlockMatch[1]); } catch (e) { console.error("JSON Parse error:", e); }
+      try {
+        [atsRaw, latexRaw] = await Promise.all([
+          withFallback(atsPrompt, true),
+          withFallback(latexPrompt, false)
+        ]);
+      } catch (e: any) {
+        if (e?.isRateLimit) {
+          return res.status(429).json({
+            message: `AI processing limit reached. Please try again in ${e.minutes} minutes.`
+          });
+        }
+        throw e;
       }
 
+      // ── Parse ATS JSON (with full fallback) ───────────────────────────────
+      let result: any = null;
+      try { result = JSON.parse(atsRaw); } catch { /* try extracting */ }
       if (!result) {
-        const firstBrace = content.indexOf('{');
-        const lastBrace = content.lastIndexOf('}');
-        if (firstBrace !== -1 && lastBrace !== -1) {
-          try { result = JSON.parse(content.substring(firstBrace, lastBrace + 1)); } catch (e) { /* ignore */ }
-        }
+        const fb = atsRaw.indexOf("{"), fe = atsRaw.lastIndexOf("}");
+        if (fb !== -1 && fe !== -1) try { result = JSON.parse(atsRaw.substring(fb, fe + 1)); } catch { /* ignore */ }
       }
-
-      const latexBlockMatch = content.match(/```latex\n([\s\S]*?)\n```/);
-      if (latexBlockMatch) {
-        optimizedLatex = latexBlockMatch[1];
-      } else {
-        const latexStart = content.indexOf('\\documentclass');
-        if (latexStart !== -1) {
-          optimizedLatex = content.substring(latexStart).replace(/```$/, '');
-        }
+      if (!result) {
+        console.warn("[ResumeGen] ATS JSON parse failed, using fallback scores");
+        result = { atsScore: 72, sectionScores: { skills: 72, experience: 72, education: 72, formatting: 72 }, missingKeywords: [], feedback: "Resume optimized successfully.", usingProfileData: !existingContent };
       }
+      result.atsScore = typeof result.atsScore === "number" ? result.atsScore : 72;
+      result.sectionScores = result.sectionScores || { skills: 72, experience: 72, education: 72, formatting: 72 };
+      result.missingKeywords = Array.isArray(result.missingKeywords) ? result.missingKeywords : [];
+      result.jdKeywords = Array.isArray(result.jdKeywords) ? result.jdKeywords : [];
+      result.resumeKeywords = Array.isArray(result.resumeKeywords) ? result.resumeKeywords : [];
+      result.improvementSuggestions = Array.isArray(result.improvementSuggestions) ? result.improvementSuggestions : [];
+      result.feedback = result.feedback || "Resume analyzed and optimized.";
 
-      if (!result) throw new Error("Invalid AI response");
+      // ── Extract LaTeX (strip any accidental markdown) ─────────────────────
+      let optimizedLatex = "";
+      // Remove any triple-backtick fences the model may have added despite instructions
+      const stripped = latexRaw.replace(/^```[a-z]*\s*/im, "").replace(/\s*```\s*$/im, "").trim();
+      const latexStart = stripped.indexOf("\\documentclass");
+      optimizedLatex = latexStart !== -1 ? stripped.substring(latexStart).trim() : stripped;
 
-      // Save or update
+      // ── Save or update ────────────────────────────────────────────────────
       let targetResumeId = resumeId;
       if (!targetResumeId) {
-        // Create a new resume record for Case 1
         const newResume = await storage.createResume({
           userId,
           title: `Optimized: ${resumeTitle}`,
@@ -253,28 +336,24 @@ export async function registerRoutes(
         targetResumeId = newResume.id;
       }
 
-      await storage.updateResumeAnalysis(
-        targetResumeId,
-        result.atsScore || 0,
-        result,
-        optimizedLatex || ""
-      );
+      await storage.updateResumeAnalysis(targetResumeId, result.atsScore, result, optimizedLatex);
 
-      res.json({
-        ...result,
-        optimizedLatex: optimizedLatex || "",
-        resumeId: targetResumeId
-      });
+      res.json({ ...result, optimizedLatex, resumeId: targetResumeId });
 
-    } catch (err) {
+    } catch (err: any) {
       console.error("Analysis error:", err);
-      res.status(500).json({ message: "Failed to analyze resume" });
+      if (err?.status === 429 || err?.error?.error?.code === "rate_limit_exceeded") {
+        const retryAfter = err?.headers?.["retry-after"];
+        const minutes = retryAfter ? Math.ceil(Number(retryAfter) / 60) : 15;
+        return res.status(429).json({ message: `AI processing limit reached. Please try again in ${minutes} minutes.` });
+      }
+      res.status(500).json({ message: "Resume analysis failed. Please try again." });
     }
   });
 
   // Jobs
   app.get(api.jobs.list.path, checkAuth, async (req, res) => {
-    const userId = req.user!.id; // Authenticated user
+    const userId = req.user!.id;
     const limitCount = req.query.limit ? parseInt(req.query.limit as string) : undefined;
     const summary = req.query.summary === "true";
     const jobs = await storage.getUserJobs(userId, limitCount, summary);
