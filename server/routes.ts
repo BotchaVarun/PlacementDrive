@@ -160,6 +160,7 @@ export async function registerRoutes(
         3. DO NOT use '\setmainfont', '\setsansfont', or '\setmonofont'.
         4. DO NOT use UTF-8 characters that require modern engines (e.g., special icons/glyphs). Use standard LaTeX commands (e.g., \\textbullet).
         5. The generated code MUST compile with 'pdflatex'.
+        6. STRICT PAGE LIMIT: The generated resume MUST NOT exceed 2 pages when compiled. Be concise and prioritize impactful information to ensure it fits within 2 pages at most.
 
         MANDATORY LATEX SKELETON:
         Use this structure:
@@ -203,7 +204,7 @@ export async function registerRoutes(
         model: "llama-3.3-70b-versatile",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.1,
-        max_completion_tokens: 6000,
+        max_completion_tokens: 15000,
         top_p: 1,
         stop: null,
         stream: false
