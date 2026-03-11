@@ -1,5 +1,5 @@
-import { db } from "../../lib/firebase.js";
 import {
+  db,
   collection,
   doc,
   getDoc,
@@ -13,7 +13,7 @@ import {
   orderBy,
   limit,
   Timestamp
-} from "firebase/firestore";
+} from "../../lib/firestore-wrapper.js";
 import { conversations, messages, Conversation, Message } from "../../../shared/schema.js";
 
 export interface IChatStorage {
@@ -66,8 +66,8 @@ export const chatStorage: IChatStorage = {
     // const q = query(conversationsRef, orderBy("createdAt", "desc"));
     const q = query(conversationsRef);
     const querySnapshot = await safeGetDocs(q, conversationsRef);
-    const convs = querySnapshot.docs.map(doc => ({ id: doc.id, ...convertDate(doc.data()) } as Conversation));
-    convs.sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
+    const convs = querySnapshot.docs.map((doc: any) => ({ id: doc.id, ...convertDate(doc.data()) } as Conversation));
+    convs.sort((a: Conversation, b: Conversation) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
     return convs;
   },
 
@@ -84,9 +84,9 @@ export const chatStorage: IChatStorage = {
     const q = query(messagesRef, where("conversationId", "==", id));
     const querySnapshot = await safeGetDocs(q, messagesRef);
     const deletePromises = querySnapshot.docs
-      .map(doc => ({ id: doc.id, ...(doc.data() as any) } as Message))
-      .filter(m => m.conversationId === id)
-      .map(m => deleteDoc(doc(db, "messages", m.id!)));
+      .map((doc: any) => ({ id: doc.id, ...(doc.data() as any) } as Message))
+      .filter((m: Message) => m.conversationId === id)
+      .map((m: Message) => deleteDoc(doc(db, "messages", m.id!)));
     await Promise.all(deletePromises);
 
     // Then delete conversation
@@ -98,9 +98,9 @@ export const chatStorage: IChatStorage = {
     const q = query(messagesRef, where("conversationId", "==", conversationId));
     const querySnapshot = await safeGetDocs(q, messagesRef);
     const msgs = querySnapshot.docs
-      .map(doc => ({ id: doc.id, ...convertDate(doc.data()) } as Message))
-      .filter(m => m.conversationId === conversationId); // Manual filter for fallback
-    msgs.sort((a, b) => (a.createdAt?.getTime() || 0) - (b.createdAt?.getTime() || 0));
+      .map((doc: any) => ({ id: doc.id, ...convertDate(doc.data()) } as Message))
+      .filter((m: Message) => m.conversationId === conversationId); // Manual filter for fallback
+    msgs.sort((a: Message, b: Message) => (a.createdAt?.getTime() || 0) - (b.createdAt?.getTime() || 0));
     return msgs;
   },
 

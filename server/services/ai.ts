@@ -29,18 +29,18 @@ export async function generateInterviewQuestions(
     count: number = 5
 ): Promise<GeneratedQuestion[]> {
     const prompt = `
-    Generate ${count} ${difficulty} level interview questions for the domain "${domain}".
+    Generate exactly ${count} ${difficulty} level interview questions for the domain "${domain}".
     Focus on conceptual understanding and practical application.
-    Return the output strictly as a JSON array of objects with this format:
+    Return ONLY a raw JSON array (no markdown, no explanation) of exactly ${count} objects:
     [
       {
-        "question": "Question text",
-        "type": "technical", // or "behavioral", "conceptual"
-        "expectedAnswer": "Brief summary of key points expected in the answer"
+        "question": "Question text here",
+        "type": "technical",
+        "expectedAnswer": "Brief summary of expected key points"
       }
     ]
-    Do not include any markdown formatting or explanations. 
-    Just the raw JSON array.
+    The type field must be one of: "technical", "behavioral", or "conceptual".
+    Return ONLY the JSON array. No other text.
   `;
 
     try {
@@ -48,36 +48,44 @@ export async function generateInterviewQuestions(
             messages: [{ role: "user", content: prompt }],
             model: "llama-3.3-70b-versatile",
             temperature: 0.7,
-            response_format: { type: "json_object" },
+            max_tokens: 4000,
+            // NOTE: Do NOT use response_format: json_object — it forces a JSON *object* wrapper
+            // which breaks the array format. We parse the raw text directly instead.
         });
 
         const content = completion.choices[0]?.message?.content || "[]";
-        // Depending on model behavior, it might wrap in a root object if json_object is forced, 
-        // or just array. safely parse.
-        let parsed;
+
+        // Strip any accidental markdown fences the model may add
+        const cleaned = content.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
+
+        let parsed: any;
         try {
-            parsed = JSON.parse(content);
-            // Handle case where model wraps it in a key like "questions"
-            if (!Array.isArray(parsed) && parsed.questions) {
-                return parsed.questions;
-            }
-            return Array.isArray(parsed) ? parsed : [];
-        } catch (e) {
-            // heavy handed cleanup if json mode fails
-            const cleaned = content.replace(/```json/g, "").replace(/```/g, "").trim();
             parsed = JSON.parse(cleaned);
-            return Array.isArray(parsed) ? parsed : [];
+        } catch {
+            // Try to extract first [...] block from the response
+            const match = cleaned.match(/\[[\s\S]*\]/);
+            if (match) parsed = JSON.parse(match[0]);
+            else throw new Error("No JSON array found in AI response");
         }
+
+        // Normalize: model might return array directly or wrap in {questions: [...]}
+        if (Array.isArray(parsed)) return parsed.slice(0, count);
+        if (parsed && Array.isArray(parsed.questions)) return parsed.questions.slice(0, count);
+
+        // Search for any array value in the response object
+        for (const key of Object.keys(parsed || {})) {
+            if (Array.isArray(parsed[key])) return (parsed[key] as any[]).slice(0, count);
+        }
+
+        return [];
     } catch (error) {
         console.error("Error generating questions:", error);
-        // Fallback questions to prevent crash
-        return [
-            {
-                question: `Tell me about your experience with ${domain}.`,
-                type: "behavioral",
-                expectedAnswer: "General overview of experience."
-            }
-        ];
+        // Fallback: generate the correct COUNT of generic questions (not just 1!)
+        return Array.from({ length: count }, (_, i) => ({
+            question: `${difficulty.charAt(0).toUpperCase() + difficulty.slice(1)} question ${i + 1}: Explain a core concept in ${domain}.`,
+            type: "technical",
+            expectedAnswer: `A thorough, structured explanation demonstrating knowledge of ${domain}.`
+        }));
     }
 }
 

@@ -1,4 +1,5 @@
 import admin from "firebase-admin";
+import "dotenv/config";
 
 // Initialize Firebase Admin
 // Ideally, you should use service account credentials here.

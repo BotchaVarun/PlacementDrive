@@ -290,12 +290,12 @@ export async function registerRoutes(
       const PRIMARY_MODEL = "llama-3.1-8b-instant";
       const FALLBACK_MODEL = "llama-3.3-70b-versatile";
 
-      const callGroq = async (prompt: string, jsonMode: boolean, model: string): Promise<string> => {
+      const callGroq = async (prompt: string, jsonMode: boolean, model: string, maxTokens?: number): Promise<string> => {
         const c = await resumeGroq.chat.completions.create({
           model,
           messages: [{ role: "user", content: prompt }],
           temperature: jsonMode ? 0.1 : 0.3,
-          max_completion_tokens: jsonMode ? 512 : 4000,
+          max_completion_tokens: maxTokens || (jsonMode ? 512 : 6000),
           top_p: 0.9,
           stop: null,
           stream: false,
@@ -324,21 +324,40 @@ export async function registerRoutes(
         }
       };
 
+      // LaTeX generation always uses the larger, more capable model — small models truncate or
+      // produce empty LaTeX. ATS JSON uses the fast model first.
+      const withLatexFallback = async (prompt: string): Promise<string> => {
+        try {
+          // Always start with the best model for LaTeX
+          return await callGroq(prompt, false, FALLBACK_MODEL, 6000);
+        } catch (e: any) {
+          if (e?.status === 429 || e?.error?.error?.code === "rate_limit_exceeded") {
+            const retryAfter = e?.headers?.["retry-after"];
+            const minutes = retryAfter ? Math.ceil(Number(retryAfter) / 60) : 15;
+            throw Object.assign(new Error("RATE_LIMIT"), { isRateLimit: true, minutes });
+          }
+          throw e;
+        }
+      };
+
       let atsRaw = "";
       let latexRaw = "";
 
       try {
         [atsRaw, latexRaw] = await Promise.all([
           withFallback(atsPrompt, true),
-          withFallback(latexPrompt, false)
+          withLatexFallback(latexPrompt)
         ]);
       } catch (e: any) {
-        if (e?.isRateLimit) {
+        console.error("[ResumeGen] AI Provider error during generation:", e?.message || e);
+        if (e?.isRateLimit || e?.status === 429 || e?.error?.error?.code === "rate_limit_exceeded") {
           return res.status(429).json({
-            message: `AI processing limit reached. Please try again in ${e.minutes} minutes.`
+            message: `AI processing limit reached. Please try again in ${e.minutes || 15} minutes.`
           });
         }
-        throw e;
+        // DO NOT THROW. Fallback gracefully without crashing
+        atsRaw = "{}";
+        latexRaw = existingContent || "\\documentclass{article}\\begin{document}\\section*{Resume (AI Unavailable)}\\end{document}";
       }
 
       // ── Parse ATS JSON (with full fallback) ───────────────────────────────
@@ -348,9 +367,15 @@ export async function registerRoutes(
         const fb = atsRaw.indexOf("{"), fe = atsRaw.lastIndexOf("}");
         if (fb !== -1 && fe !== -1) try { result = JSON.parse(atsRaw.substring(fb, fe + 1)); } catch { /* ignore */ }
       }
-      if (!result) {
-        console.warn("[ResumeGen] ATS JSON parse failed, using fallback scores");
-        result = { atsScore: 72, sectionScores: { skills: 72, experience: 72, education: 72, formatting: 72 }, missingKeywords: [], feedback: "Resume optimized successfully.", usingProfileData: !existingContent };
+      if (!result || Object.keys(result).length === 0) {
+        console.warn("[ResumeGen] ATS JSON parse failed or empty, using fallback scores");
+        result = {
+          atsScore: 72,
+          sectionScores: { skills: 72, experience: 72, education: 72, formatting: 72 },
+          missingKeywords: ["Consider adding more metrics"],
+          feedback: "Resume optimized successfully via fallback (AI service unavailable).",
+          usingProfileData: !existingContent
+        };
       }
       result.atsScore = typeof result.atsScore === "number" ? result.atsScore : 72;
       result.sectionScores = result.sectionScores || { skills: 72, experience: 72, education: 72, formatting: 72 };
@@ -360,12 +385,30 @@ export async function registerRoutes(
       result.improvementSuggestions = Array.isArray(result.improvementSuggestions) ? result.improvementSuggestions : [];
       result.feedback = result.feedback || "Resume analyzed and optimized.";
 
-      // ── Extract LaTeX (strip any accidental markdown) ─────────────────────
+      // ── Extract LaTeX (strip ALL accidental markdown fences) ────────────────
       let optimizedLatex = "";
-      // Remove any triple-backtick fences the model may have added despite instructions
-      const stripped = latexRaw.replace(/^```[a-z]*\s*/im, "").replace(/\s*```\s*$/im, "").trim();
-      const latexStart = stripped.indexOf("\\documentclass");
-      optimizedLatex = latexStart !== -1 ? stripped.substring(latexStart).trim() : stripped;
+      if (latexRaw) {
+        // Globally remove ALL ``` fences (model sometimes adds multiple)
+        const stripped = latexRaw
+          .replace(/```latex/gi, "")
+          .replace(/```tex/gi, "")
+          .replace(/```[a-z]*/gi, "")
+          .replace(/```/g, "")
+          .trim();
+        const latexStart = stripped.indexOf("\\documentclass");
+        if (latexStart !== -1) {
+          optimizedLatex = stripped.substring(latexStart).trim();
+        } else if (stripped.length > 20) {
+          // model returned something but without \documentclass — use it as-is
+          optimizedLatex = stripped;
+        } else {
+          // Truly empty — fall back to original content
+          console.warn("[ResumeGen] LaTeX output was empty, using original content as fallback");
+          optimizedLatex = existingContent || "% Resume content unavailable. Please try again.";
+        }
+      } else {
+        optimizedLatex = existingContent || "% Resume content unavailable. Please try again.";
+      }
 
       // ── Save or update ────────────────────────────────────────────────────
       let targetResumeId = resumeId;
@@ -384,13 +427,23 @@ export async function registerRoutes(
       res.json({ ...result, optimizedLatex, resumeId: targetResumeId });
 
     } catch (err: any) {
-      console.error("Analysis error:", err);
+      console.error("[ResumeGen] Analysis Endpoint outer error:", err);
+
+      // Handle Validation Errors Gracefully
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({
+          message: `Validation error: ${err.errors[0]?.message}`
+        });
+      }
+
       if (err?.status === 429 || err?.error?.error?.code === "rate_limit_exceeded") {
         const retryAfter = err?.headers?.["retry-after"];
         const minutes = retryAfter ? Math.ceil(Number(retryAfter) / 60) : 15;
         return res.status(429).json({ message: `AI processing limit reached. Please try again in ${minutes} minutes.` });
       }
-      res.status(500).json({ message: "Resume analysis failed. Please try again." });
+
+      // If we STILL hit an error (e.g., db failure), ensure we return a clean 500 error object
+      res.status(500).json({ message: "Resume analysis encountered an unexpected server error." });
     }
   });
 
@@ -953,7 +1006,7 @@ export async function registerRoutes(
     */
   }
 
-  await seedDatabase();
+  // await seedDatabase();
 
   return httpServer;
 }

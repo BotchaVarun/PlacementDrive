@@ -463,10 +463,10 @@ export default function JobSeekers() {
                                         </div>
                                         <div>
                                             <DialogTitle className="text-2xl font-bold">{selectedJob.title}</DialogTitle>
-                                            <p className="text-lg font-medium text-muted-foreground flex items-center gap-2">
+                                            <div className="text-lg font-medium text-muted-foreground flex items-center gap-2">
                                                 {selectedJob.company}
                                                 <Badge variant="secondary" className="font-normal">{selectedJob.source}</Badge>
-                                            </p>
+                                            </div>
                                         </div>
                                     </div>
                                     <div className="flex gap-2 w-full md:w-auto">

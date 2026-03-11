@@ -1,5 +1,5 @@
-import { db } from "./lib/firebase.js"; // Use our new Firebase setup
 import {
+  db,
   collection,
   doc,
   getDoc,
@@ -15,7 +15,7 @@ import {
   deleteDoc,
   getCountFromServer,
   Bytes
-} from "firebase/firestore";
+} from "./lib/firestore-wrapper.js";
 import {
   User, InsertUser,
   Resume, InsertResume,
@@ -212,7 +212,7 @@ export class FirestoreStorage implements IStorage {
 
     const querySnapshot = await this.safeGetDocs(q, resumesRef);
     const resumes = querySnapshot.docs
-      .map(doc => {
+      .map((doc: any) => {
         const data = doc.data() as any;
         if (summary) {
           delete data.content;
@@ -221,10 +221,10 @@ export class FirestoreStorage implements IStorage {
         }
         return { id: doc.id, ...this.convertDate(data) } as Resume;
       })
-      .filter(r => r.userId === userId); // Manual filter for fallback
+      .filter((r: any) => r.userId === userId); // Manual filter for fallback
 
     // Temporary: Sort in-memory until indexes are ready
-    resumes.sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
+    resumes.sort((a: any, b: any) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
 
     if (limitCount) return resumes.slice(0, limitCount);
     return resumes;
@@ -261,7 +261,7 @@ export class FirestoreStorage implements IStorage {
 
     const querySnapshot = await this.safeGetDocs(q, jobsRef);
     const jobs = querySnapshot.docs
-      .map(doc => {
+      .map((doc: any) => {
         const data = doc.data() as any;
         if (summary) {
           delete data.description;
@@ -269,10 +269,10 @@ export class FirestoreStorage implements IStorage {
         }
         return { id: doc.id, ...this.convertDate(data) } as Job;
       })
-      .filter(j => j.userId === userId); // Manual filter for fallback
+      .filter((j: any) => j.userId === userId); // Manual filter for fallback
 
     // Temporary: Sort in-memory until indexes are ready
-    jobs.sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
+    jobs.sort((a: any, b: any) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
 
     if (limitCount) return jobs.slice(0, limitCount);
     return jobs;
@@ -283,8 +283,8 @@ export class FirestoreStorage implements IStorage {
     // const q = query(jobsRef, orderBy("createdAt", "desc"), limit(50));
     const q = query(jobsRef, limit(100)); // Performance: increased limit but kept it constrained
     const querySnapshot = await this.safeGetDocs(q, jobsRef);
-    const jobs = querySnapshot.docs.map(doc => ({ id: doc.id, ...this.convertDate(doc.data()) } as Job));
-    jobs.sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
+    const jobs = querySnapshot.docs.map((doc: any) => ({ id: doc.id, ...this.convertDate(doc.data()) } as Job));
+    jobs.sort((a: any, b: any) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
     return jobs;
   }
 
@@ -333,15 +333,15 @@ export class FirestoreStorage implements IStorage {
     const q = query(ref, where("interviewId", "==", interviewId));
     const querySnapshot = await getDocs(q);
     return querySnapshot.docs
-      .map(doc => ({ id: doc.id, ...this.convertDate(doc.data()) } as Question))
-      .sort((a, b) => a.order - b.order);
+      .map((doc: any) => ({ id: doc.id, ...this.convertDate(doc.data()) } as Question))
+      .sort((a: any, b: any) => a.order - b.order);
   }
 
   async getInterviewResponses(interviewId: string): Promise<Response[]> {
     const ref = collection(db, "interview_responses");
     const q = query(ref, where("interviewId", "==", interviewId));
     const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({ id: doc.id, ...this.convertDate(doc.data()) } as Response));
+    return querySnapshot.docs.map((doc: any) => ({ id: doc.id, ...this.convertDate(doc.data()) } as Response));
   }
 
   // Profile / Account Implementation
@@ -355,9 +355,9 @@ export class FirestoreStorage implements IStorage {
     const result = { id: snap.docs[0].id, ...this.convertDate(data) } as PersonalInfo & { photoBase64?: string };
 
     // Server conversion: binary BLOB to Base64 string for the frontend
-    if (data.photoBlob && data.photoBlob instanceof Bytes) {
+    if (data.photoBlob && data.photoBlob.constructor?.name === "Buffer") {
       // Re-attach data URI scheme so browser can render directly
-      result.photoBase64 = `data:image/webp;base64,${data.photoBlob.toBase64()}`;
+      result.photoBase64 = `data:image/webp;base64,${data.photoBlob.toString("base64")}`;
     }
 
     return result;
@@ -401,7 +401,7 @@ export class FirestoreStorage implements IStorage {
     const ref = collection(db, "user_education");
     const q = query(ref, where("userId", "==", userId));
     const snap = await getDocs(q);
-    return snap.docs.map(doc => ({ id: doc.id, ...this.convertDate(doc.data()) } as Education));
+    return snap.docs.map((doc: any) => ({ id: doc.id, ...this.convertDate(doc.data()) } as Education));
   }
 
   async addEducation(data: InsertEducation): Promise<Education> {
@@ -426,7 +426,7 @@ export class FirestoreStorage implements IStorage {
     const ref = collection(db, "user_experience");
     const q = query(ref, where("userId", "==", userId));
     const snap = await getDocs(q);
-    return snap.docs.map(doc => ({ id: doc.id, ...this.convertDate(doc.data()) } as Experience));
+    return snap.docs.map((doc: any) => ({ id: doc.id, ...this.convertDate(doc.data()) } as Experience));
   }
 
   async addExperience(data: InsertExperience): Promise<Experience> {
@@ -451,7 +451,7 @@ export class FirestoreStorage implements IStorage {
     const ref = collection(db, "user_projects");
     const q = query(ref, where("userId", "==", userId));
     const snap = await getDocs(q);
-    return snap.docs.map(doc => ({ id: doc.id, ...this.convertDate(doc.data()) } as Project));
+    return snap.docs.map((doc: any) => ({ id: doc.id, ...this.convertDate(doc.data()) } as Project));
   }
 
   async addProject(data: InsertProject): Promise<Project> {
@@ -476,7 +476,7 @@ export class FirestoreStorage implements IStorage {
     const ref = collection(db, "user_skills");
     const q = query(ref, where("userId", "==", userId));
     const snap = await getDocs(q);
-    return snap.docs.map(doc => ({ id: doc.id, ...this.convertDate(doc.data()) } as Skill));
+    return snap.docs.map((doc: any) => ({ id: doc.id, ...this.convertDate(doc.data()) } as Skill));
   }
 
   async addSkill(data: InsertSkill): Promise<Skill> {
@@ -494,7 +494,7 @@ export class FirestoreStorage implements IStorage {
     const ref = collection(db, "user_certifications");
     const q = query(ref, where("userId", "==", userId));
     const snap = await getDocs(q);
-    return snap.docs.map(doc => ({ id: doc.id, ...this.convertDate(doc.data()) } as Certification));
+    return snap.docs.map((doc: any) => ({ id: doc.id, ...this.convertDate(doc.data()) } as Certification));
   }
 
   async addCertification(data: InsertCertification): Promise<Certification> {
@@ -519,7 +519,7 @@ export class FirestoreStorage implements IStorage {
     const ref = collection(db, "user_achievements");
     const q = query(ref, where("userId", "==", userId));
     const snap = await getDocs(q);
-    return snap.docs.map(doc => ({ id: doc.id, ...this.convertDate(doc.data()) } as Achievement));
+    return snap.docs.map((doc: any) => ({ id: doc.id, ...this.convertDate(doc.data()) } as Achievement));
   }
 
   async addAchievement(data: InsertAchievement): Promise<Achievement> {
@@ -575,7 +575,7 @@ export class FirestoreStorage implements IStorage {
     const ref = collection(db, "job_sources");
     const q = query(ref, where("active", "==", true));
     const snap = await getDocs(q);
-    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as JobSource));
+    return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as JobSource));
   }
 
   async addJobSource(source: InsertJobSource): Promise<JobSource> {
@@ -590,9 +590,9 @@ export class FirestoreStorage implements IStorage {
     const q = query(ref, where("userId", "==", userId));
     const querySnapshot = await this.safeGetDocs(q, ref);
     const recs = querySnapshot.docs
-      .map(doc => ({ id: doc.id, ...this.convertDate(doc.data()) } as JobRecommendation))
-      .filter(r => r.userId === userId); // Manual filter for fallback
-    recs.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
+      .map((doc: any) => ({ id: doc.id, ...this.convertDate(doc.data()) } as JobRecommendation))
+      .filter((r: any) => r.userId === userId); // Manual filter for fallback
+    recs.sort((a: any, b: any) => (b.matchScore || 0) - (a.matchScore || 0));
     return recs.slice(0, 50);
   }
 
@@ -616,8 +616,8 @@ export class FirestoreStorage implements IStorage {
     const q = query(ref, where("userId", "==", userId));
     const querySnapshot = await this.safeGetDocs(q, ref);
     return querySnapshot.docs
-      .map(doc => ({ id: doc.id, ...this.convertDate(doc.data()) } as SavedJob))
-      .filter(s => s.userId === userId); // Manual filter for fallback
+      .map((doc: any) => ({ id: doc.id, ...this.convertDate(doc.data()) } as SavedJob))
+      .filter((s: any) => s.userId === userId); // Manual filter for fallback
   }
 
   async unsaveJob(userId: string, jobId: string): Promise<void> {
@@ -647,18 +647,18 @@ export class FirestoreStorage implements IStorage {
 
     const stats = {
       totalJobs: jobs.length,
-      activeApplications: jobs.filter(j => j.status !== 'rejected').length,
-      interviewCount: jobs.filter(j => j.status === 'interview').length,
+      activeApplications: jobs.filter((j: any) => j.status !== 'rejected').length,
+      interviewCount: jobs.filter((j: any) => j.status === 'interview').length,
       resumesCount: resumesCount,
       recentResumes: resumes,
       jobPipeline: {
-        new: jobs.filter(j => j.status === 'new').length,
-        applied: jobs.filter(j => j.status === 'applied').length,
-        interview: jobs.filter(j => j.status === 'interview').length,
-        offer: jobs.filter(j => j.status === 'offer').length,
-        rejected: jobs.filter(j => j.status === 'rejected').length,
+        new: jobs.filter((j: any) => j.status === 'new').length,
+        applied: jobs.filter((j: any) => j.status === 'applied').length,
+        interview: jobs.filter((j: any) => j.status === 'interview').length,
+        offer: jobs.filter((j: any) => j.status === 'offer').length,
+        rejected: jobs.filter((j: any) => j.status === 'rejected').length,
       },
-      avgAtsScore: resumes.length > 0 ? resumes.reduce((acc, r) => acc + (r.atsScore || 0), 0) / resumes.length : 0
+      avgAtsScore: resumes.length > 0 ? resumes.reduce((acc: any, r: any) => acc + (r.atsScore || 0), 0) / resumes.length : 0
     };
 
     return stats;

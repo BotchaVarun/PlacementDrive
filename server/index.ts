@@ -28,7 +28,7 @@ import { serveStatic } from "./static.js";
       host: "0.0.0.0",
     },
     () => {
-      log(`serving on port ${port}`);
+      log(`serving on port ${port} `);
     },
   );
 })();
