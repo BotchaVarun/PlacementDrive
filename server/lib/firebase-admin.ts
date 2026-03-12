@@ -6,16 +6,12 @@ import crypto from "crypto";
 // Ideally, you should use service account credentials here.
 // For now, we'll try to use the default application credentials or a mock if in development without keys.
 
-async function initializeFirebase() {
-    try {
-        // If apps already exist, we clear them to ensure our credentials take effect
-        if (admin.apps.length > 0) {
-            console.log(`Cleaning up ${admin.apps.length} existing Firebase apps...`);
-            for (const app of admin.apps) {
-                if (app) await app.delete();
-            }
-        }
+function initializeFirebase() {
+    if (admin.apps.length > 0) {
+        return; // Already initialized
+    }
 
+    try {
         console.log("Initializing Firebase Admin with explicit credentials...");
         let credential;
 
@@ -57,10 +53,8 @@ async function initializeFirebase() {
     }
 }
 
-// Execute initialization and export
-// Note: Some modules might import auth/db before this completes if not careful.
-// In ESM, top-level await is generally supported for dependencies.
-await initializeFirebase();
+// Execute initialization synchronously
+initializeFirebase();
 
 export const auth = admin.auth();
 export const db = admin.firestore();
