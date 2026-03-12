@@ -1,48 +1,49 @@
 import admin from "firebase-admin";
 import "dotenv/config";
+import crypto from "crypto";
 
 // Initialize Firebase Admin
 // Ideally, you should use service account credentials here.
 // For now, we'll try to use the default application credentials or a mock if in development without keys.
 
-if (!admin.apps.length) {
+async function initializeFirebase() {
     try {
-        console.log("Initializing Firebase Admin...");
+        // If apps already exist, we clear them to ensure our credentials take effect
+        if (admin.apps.length > 0) {
+            console.log(`Cleaning up ${admin.apps.length} existing Firebase apps...`);
+            for (const app of admin.apps) {
+                if (app) await app.delete();
+            }
+        }
+
+        console.log("Initializing Firebase Admin with explicit credentials...");
         let credential;
 
-        // 1. Try to load Service Account from Env Var
         if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-            console.log("Attempting to initialize with FIREBASE_SERVICE_ACCOUNT...");
             try {
                 const saJson = process.env.FIREBASE_SERVICE_ACCOUNT.trim();
                 const serviceAccount = JSON.parse(saJson);
                 
-                // Fix for private key newlines and whitespace
                 if (serviceAccount.private_key && typeof serviceAccount.private_key === 'string') {
                     serviceAccount.private_key = serviceAccount.private_key
                         .replace(/\\n/g, '\n')
                         .trim();
+                    
+                    const hash = crypto.createHash('sha256').update(serviceAccount.private_key).digest('hex');
+                    console.log(`Private Key Hash (SHA-256): ${hash.substring(0, 16)}...`);
+                    console.log(`Private Key ID: ${serviceAccount.private_key_id}`);
                 }
                 
                 credential = admin.credential.cert(serviceAccount);
-                console.log(`Successfully configured certificate for project: ${serviceAccount.project_id}`);
+                console.log(`Credential certificate created for: ${serviceAccount.client_email}`);
             } catch (e: any) {
-                console.error("Failed to parse or apply FIREBASE_SERVICE_ACCOUNT JSON:", e.message);
-            }
-        }
-
-        // 2. Fallback to Application Default Credentials
-        if (!credential) {
-            console.log("No valid service account found in environment, falling back to Application Default Credentials...");
-            try {
-                credential = admin.credential.applicationDefault();
-            } catch (e: any) {
-                console.warn("Application Default Credentials not available:", e.message);
+                console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT JSON:", e.message);
             }
         }
 
         if (!credential) {
-            throw new Error("No valid Firebase credentials found. Please check FIREBASE_SERVICE_ACCOUNT in your .env file.");
+            console.log("Falling back to Application Default Credentials...");
+            credential = admin.credential.applicationDefault();
         }
 
         admin.initializeApp({
@@ -50,11 +51,16 @@ if (!admin.apps.length) {
             projectId: "placementprime-a9713"
         });
 
-        console.log("Firebase Admin initialized successfully.");
+        console.log("Firebase Admin [DEFAULT] app initialized successfully.");
     } catch (error: any) {
-        console.error("Critical error: Failed to initialize Firebase Admin:", error.message);
+        console.error("CRITICAL: Firebase Admin initialization failed:", error.message);
     }
 }
+
+// Execute initialization and export
+// Note: Some modules might import auth/db before this completes if not careful.
+// In ESM, top-level await is generally supported for dependencies.
+await initializeFirebase();
 
 export const auth = admin.auth();
 export const db = admin.firestore();
