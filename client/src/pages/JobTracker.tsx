@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { EditJobDialog } from "@/components/EditJobDialog";
 import { Job } from "@shared/schema";
+import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
 
 /**
@@ -152,29 +153,41 @@ const JobItem = memo(({ job, onEdit, onMove, onDelete }: {
               <span>{company}</span>
             </div>
           </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-6 w-6 -mr-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => onEdit(job)}>Edit Details</DropdownMenuItem>
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger>Move to...</DropdownMenuSubTrigger>
-                <DropdownMenuSubContent>
-                  <DropdownMenuItem onClick={() => onMove(job, 'new')}>Wishlist</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => onMove(job, 'applied')}>Applied</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => onMove(job, 'interview')}>Interview</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => onMove(job, 'offer')}>Offer</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => onMove(job, 'rejected')}>Rejected</DropdownMenuItem>
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-              <DropdownMenuItem className="text-destructive" onClick={() => onDelete(job.id)}>
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="flex items-center gap-2">
+            {job.status === 'offer' && (
+              <Badge variant="secondary" className="bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20 text-[10px] uppercase tracking-wider font-bold">
+                Offer
+              </Badge>
+            )}
+            {job.status === 'rejected' && (
+              <Badge variant="secondary" className="bg-destructive/10 text-destructive border-destructive/20 text-[10px] uppercase tracking-wider font-bold">
+                Rejected
+              </Badge>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-6 w-6 -mr-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => onEdit(job)}>Edit Details</DropdownMenuItem>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>Move to...</DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    <DropdownMenuItem onClick={() => onMove(job, 'new')}>Wishlist</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onMove(job, 'applied')}>Applied</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onMove(job, 'interview')}>Interview</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onMove(job, 'offer')}>Offer</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onMove(job, 'rejected')}>Rejected</DropdownMenuItem>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                <DropdownMenuItem className="text-destructive" onClick={() => onDelete(job.id)}>
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
 
         <div className="flex items-center justify-between pt-2">
