@@ -152,7 +152,7 @@ export async function registerRoutes(
 
       // ── Truncate inputs to control token usage ────────────────────────────
       const MAX_JD = 1200;
-      const MAX_RESUME = 2000;
+      const MAX_RESUME = 4000;
       const truncatedJd = (jobDescription || "").substring(0, MAX_JD);
       const truncatedResume = existingContent.substring(0, MAX_RESUME);
       const profileStr = JSON.stringify(compressedProfile);
@@ -185,22 +185,22 @@ export async function registerRoutes(
         "",
         "Return EXACTLY this JSON structure (no extra fields, no markdown):",
         JSON.stringify({
-          atsScore: "<overall 0-100 weighted: skills 40%, experience 30%, education 15%, formatting 15%>",
+          atsScore: "<number 0-100: weighted average of section scores>",
           sectionScores: {
-            skills: "<0-100>",
-            experience: "<0-100>",
-            education: "<0-100>",
-            formatting: "<0-100>"
+            skills: "<number 0-100: how well technical skills match JD keywords>",
+            experience: "<number 0-100: relevance of past roles to JD responsibilities>",
+            education: "<number 0-100: alignment of degree/certifications with JD requirements>",
+            formatting: "<number 0-100: clarity, structure, and ATS-readability>"
           },
-          jdKeywords: ["<all technical keywords extracted from JD>"],
-          resumeKeywords: ["<keywords already present in resume>"],
-          missingKeywords: ["<JD keywords NOT found in resume — most important first>"],
+          jdKeywords: ["<list ALL technical skills, tools, and platforms mentioned in JD>"],
+          resumeKeywords: ["<list technical skills, tools, and platforms actually found in the resume>"],
+          missingKeywords: ["<list JD keywords that are NOT in the resume but should be. Use exact JD terminology.>"],
           improvementSuggestions: [
-            "<specific actionable suggestion 1>",
-            "<specific actionable suggestion 2>",
-            "<specific actionable suggestion 3>"
+            "<specific actionable suggestion to improve matching for JD keywords>",
+            "<specific actionable suggestion to improve experience impact>",
+            "<specific actionable suggestion to improve formatting/structure>"
           ],
-          feedback: "<2-3 sentences summarizing overall fit and top priority improvements>",
+          feedback: "<2-3 professional sentences summarizing overall fit and key areas to enhance.>",
           usingProfileData: usingProfile
         })
       ].join("\n");
@@ -343,20 +343,22 @@ export async function registerRoutes(
       let atsRaw = "";
       let latexRaw = "";
 
+      // ── Execute both calls (separated for reliability) ───────────────────
       try {
-        [atsRaw, latexRaw] = await Promise.all([
-          withFallback(atsPrompt, true),
-          withLatexFallback(latexPrompt)
-        ]);
+        // Use 8b model first for ATS to avoid strict 70b rate limits
+        atsRaw = await withFallback(atsPrompt, true);
       } catch (e: any) {
-        console.error("[ResumeGen] AI Provider error during generation:", e?.message || e);
-        if (e?.isRateLimit || e?.status === 429 || e?.error?.error?.code === "rate_limit_exceeded") {
-          return res.status(429).json({
-            message: `AI processing limit reached. Please try again in ${e.minutes || 15} minutes.`
-          });
-        }
-        // DO NOT THROW. Fallback gracefully without crashing
+        if (e.isRateLimit) throw e; // Pass rate limits to outer handler
+        console.error("[ResumeGen] ATS Prompt failure:", e?.message || e);
         atsRaw = "{}";
+      }
+
+      try {
+        // LaTeX generation remains on the large model as small models fail it
+        latexRaw = await withLatexFallback(latexPrompt);
+      } catch (e: any) {
+        if (e.isRateLimit) throw e; // Pass rate limits to outer handler
+        console.error("[ResumeGen] LaTeX Prompt failure:", e?.message || e);
         latexRaw = existingContent || "\\documentclass{article}\\begin{document}\\section*{Resume (AI Unavailable)}\\end{document}";
       }
 
@@ -368,12 +370,13 @@ export async function registerRoutes(
         if (fb !== -1 && fe !== -1) try { result = JSON.parse(atsRaw.substring(fb, fe + 1)); } catch { /* ignore */ }
       }
       if (!result || Object.keys(result).length === 0) {
-        console.warn("[ResumeGen] ATS JSON parse failed or empty, using fallback scores");
+        console.warn("[ResumeGen] ATS JSON parse failed or empty, using improved fallback scores");
+        // Improved fallback: provide more context than just "72"
         result = {
-          atsScore: 72,
-          sectionScores: { skills: 72, experience: 72, education: 72, formatting: 72 },
-          missingKeywords: ["Consider adding more metrics"],
-          feedback: "Resume optimized successfully via fallback (AI service unavailable).",
+          atsScore: 0, // 0 indicates analysis couldn't be performed
+          sectionScores: { skills: 0, experience: 0, education: 0, formatting: 0 },
+          missingKeywords: ["Analysing..."],
+          feedback: "AI analysis is currently unavailable. Please try again in a few minutes.",
           usingProfileData: !existingContent
         };
       }
