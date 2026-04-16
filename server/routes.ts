@@ -126,17 +126,17 @@ export async function registerRoutes(
         name: pi.fullName || p.name || "",
         email: pi.email || "",
         phone: pi.phone || "",
-        skills: (p.skills || []).map((s: any) => s.name || s).join(", "),
+        skills: (p.skills || []).map((s: any) => s?.name || s || "").join(", "),
         education: (p.education || []).map((e: any) =>
-          `${e.degree || ""} at ${e.institution || ""} (${e.startYear || ""}–${e.endYear || ""})`
+          `${e?.degree || ""} at ${e?.institution || ""} (${e?.startYear || ""}–${e?.endYear || ""})`
         ),
         experience: (p.experience || []).map((e: any) =>
-          `${e.role || e.title || ""} at ${e.company || ""}: ${(e.description || "").substring(0, 150)}`
+          `${e?.role || e?.title || ""} at ${e?.company || ""}: ${(e?.description || "").substring(0, 150)}`
         ),
         projects: (p.projects || []).map((pr: any) =>
-          `${pr.title || pr.name || ""}: ${(pr.description || "").substring(0, 120)}`
+          `${pr?.title || pr?.name || ""}: ${(pr?.description || "").substring(0, 120)}`
         ),
-        certifications: (p.certifications || []).map((c: any) => c.name || ""),
+        certifications: (p.certifications || []).map((c: any) => c?.name || c || ""),
       };
 
       let existingContent = resumeContent || "";
@@ -288,7 +288,8 @@ export async function registerRoutes(
 
       // ── Execute both calls (parallel for speed) ───────────────────────────
       const PRIMARY_MODEL = "llama-3.1-8b-instant";
-      const FALLBACK_MODEL = "llama-3.3-70b-versatile";
+      const MID_MODEL = "mixtral-8x7b-32768";
+      const LARGE_MODEL = "llama-3.3-70b-versatile";
 
       const callGroq = async (prompt: string, jsonMode: boolean, model: string, maxTokens?: number): Promise<string> => {
         const c = await resumeGroq.chat.completions.create({
@@ -308,33 +309,45 @@ export async function registerRoutes(
         try {
           return await callGroq(prompt, jsonMode, PRIMARY_MODEL);
         } catch (e: any) {
-          if (e?.status === 429) {
+          if (e?.status === 429 || e?.error?.error?.code === "rate_limit_exceeded") {
             try {
-              return await callGroq(prompt, jsonMode, FALLBACK_MODEL);
-            } catch (fe: any) {
-              if (fe?.status === 429 || fe?.error?.error?.code === "rate_limit_exceeded") {
-                const retryAfter = fe?.headers?.["retry-after"];
-                const minutes = retryAfter ? Math.ceil(Number(retryAfter) / 60) : 15;
-                throw Object.assign(new Error("RATE_LIMIT"), { isRateLimit: true, minutes });
-              }
-              throw fe;
+              // Try Mid-tier model if Primary is limited
+              return await callGroq(prompt, jsonMode, MID_MODEL);
+            } catch (me: any) {
+               if (me?.status === 429 || me?.error?.error?.code === "rate_limit_exceeded") {
+                 const retryAfter = me?.headers?.["retry-after"];
+                 const minutes = retryAfter ? Math.ceil(Number(retryAfter) / 60) : 15;
+                 throw Object.assign(new Error("RATE_LIMIT"), { isRateLimit: true, minutes });
+               }
+               throw me;
             }
           }
           throw e;
         }
       };
 
-      // LaTeX generation always uses the larger, more capable model — small models truncate or
-      // produce empty LaTeX. ATS JSON uses the fast model first.
       const withLatexFallback = async (prompt: string): Promise<string> => {
         try {
-          // Always start with the best model for LaTeX
-          return await callGroq(prompt, false, FALLBACK_MODEL, 6000);
+          // Always try the best model first for LaTeX
+          return await callGroq(prompt, false, LARGE_MODEL, 6000);
         } catch (e: any) {
           if (e?.status === 429 || e?.error?.error?.code === "rate_limit_exceeded") {
-            const retryAfter = e?.headers?.["retry-after"];
-            const minutes = retryAfter ? Math.ceil(Number(retryAfter) / 60) : 15;
-            throw Object.assign(new Error("RATE_LIMIT"), { isRateLimit: true, minutes });
+            try {
+              // Fallback to Mid-tier Mixtral (highly capable for LaTeX)
+              return await callGroq(prompt, false, MID_MODEL, 6000);
+            } catch (me: any) {
+              if (me?.status === 429 || me?.error?.error?.code === "rate_limit_exceeded") {
+                try {
+                  // Last resort: small model (might truncate but better than failure)
+                  return await callGroq(prompt, false, PRIMARY_MODEL, 4000);
+                } catch (pe: any) {
+                  const retryAfter = pe?.headers?.["retry-after"];
+                  const minutes = retryAfter ? Math.ceil(Number(retryAfter) / 60) : 15;
+                  throw Object.assign(new Error("RATE_LIMIT"), { isRateLimit: true, minutes });
+                }
+              }
+              throw me;
+            }
           }
           throw e;
         }
@@ -343,23 +356,27 @@ export async function registerRoutes(
       let atsRaw = "";
       let latexRaw = "";
 
-      // ── Execute both calls (separated for reliability) ───────────────────
+      // ── Execute both calls in parallel for maximum speed ────────────────
       try {
-        // Use 8b model first for ATS to avoid strict 70b rate limits
-        atsRaw = await withFallback(atsPrompt, true);
-      } catch (e: any) {
-        if (e.isRateLimit) throw e; // Pass rate limits to outer handler
-        console.error("[ResumeGen] ATS Prompt failure:", e?.message || e);
-        atsRaw = "{}";
-      }
-
-      try {
-        // LaTeX generation remains on the large model as small models fail it
-        latexRaw = await withLatexFallback(latexPrompt);
-      } catch (e: any) {
-        if (e.isRateLimit) throw e; // Pass rate limits to outer handler
-        console.error("[ResumeGen] LaTeX Prompt failure:", e?.message || e);
-        latexRaw = existingContent || "\\documentclass{article}\\begin{document}\\section*{Resume (AI Unavailable)}\\end{document}";
+        const [atsOutput, latexOutput] = await Promise.all([
+          // ATS scoring (usually fast)
+          withFallback(atsPrompt, true).catch(async (e: any) => {
+            if (e.isRateLimit) throw e;
+            console.error("[ResumeGen] ATS Prompt failure:", e?.message || e);
+            return "{}";
+          }),
+          // LaTeX generation (thoroughly more complex)
+          withLatexFallback(latexPrompt).catch(async (e: any) => {
+            if (e.isRateLimit) throw e;
+            console.error("[ResumeGen] LaTeX Prompt failure:", e?.message || e);
+            return existingContent || "\\documentclass{article}\\begin{document}\\section*{Resume (AI Unavailable)}\\end{document}";
+          })
+        ]);
+        atsRaw = atsOutput;
+        latexRaw = latexOutput;
+      } catch (err: any) {
+        if (err.isRateLimit) throw err;
+        throw err;
       }
 
       // ── Parse ATS JSON (with full fallback) ───────────────────────────────
@@ -439,9 +456,9 @@ export async function registerRoutes(
         });
       }
 
-      if (err?.status === 429 || err?.error?.error?.code === "rate_limit_exceeded") {
+      if (err?.status === 429 || err?.error?.error?.code === "rate_limit_exceeded" || err?.isRateLimit) {
         const retryAfter = err?.headers?.["retry-after"];
-        const minutes = retryAfter ? Math.ceil(Number(retryAfter) / 60) : 15;
+        const minutes = err.minutes || (retryAfter ? Math.ceil(Number(retryAfter) / 60) : 15);
         return res.status(429).json({ message: `AI processing limit reached. Please try again in ${minutes} minutes.` });
       }
 

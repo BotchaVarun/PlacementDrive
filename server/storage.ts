@@ -160,7 +160,7 @@ export class FirestoreStorage implements IStorage {
 
     const usersRef = collection(db, "users");
     const q = query(usersRef, where("firebaseUid", "==", uid));
-    const querySnapshot = await getDocs(q);
+    const querySnapshot = await this.safeGetDocs(q, usersRef);
     if (querySnapshot.empty) return undefined;
     const docSnap = querySnapshot.docs[0];
     const user = { id: docSnap.id, ...this.convertDate(docSnap.data()) } as User;
@@ -331,7 +331,7 @@ export class FirestoreStorage implements IStorage {
   async getInterviewQuestions(interviewId: string): Promise<Question[]> {
     const ref = collection(db, "interview_questions");
     const q = query(ref, where("interviewId", "==", interviewId));
-    const querySnapshot = await getDocs(q);
+    const querySnapshot = await this.safeGetDocs(q, ref);
     return querySnapshot.docs
       .map((doc: any) => ({ id: doc.id, ...this.convertDate(doc.data()) } as Question))
       .sort((a: any, b: any) => a.order - b.order);
@@ -340,7 +340,7 @@ export class FirestoreStorage implements IStorage {
   async getInterviewResponses(interviewId: string): Promise<Response[]> {
     const ref = collection(db, "interview_responses");
     const q = query(ref, where("interviewId", "==", interviewId));
-    const querySnapshot = await getDocs(q);
+    const querySnapshot = await this.safeGetDocs(q, ref);
     return querySnapshot.docs.map((doc: any) => ({ id: doc.id, ...this.convertDate(doc.data()) } as Response));
   }
 
@@ -348,7 +348,7 @@ export class FirestoreStorage implements IStorage {
   async getPersonalInfo(userId: string): Promise<PersonalInfo | undefined> {
     const ref = collection(db, "user_personal_info");
     const q = query(ref, where("userId", "==", userId));
-    const snap = await getDocs(q);
+    const snap = await this.safeGetDocs(q, ref);
     if (snap.empty) return undefined;
 
     const data = snap.docs[0].data();
@@ -366,7 +366,7 @@ export class FirestoreStorage implements IStorage {
   async updatePersonalInfo(userId: string, data: InsertPersonalInfo & { photoBase64?: string }): Promise<PersonalInfo> {
     const ref = collection(db, "user_personal_info");
     const q = query(ref, where("userId", "==", userId));
-    const snap = await getDocs(q);
+    const snap = await this.safeGetDocs(q, ref);
     const now = new Date();
 
     // Server conversion: Base64 to binary BLOB for database
@@ -400,7 +400,7 @@ export class FirestoreStorage implements IStorage {
   async getEducation(userId: string): Promise<Education[]> {
     const ref = collection(db, "user_education");
     const q = query(ref, where("userId", "==", userId));
-    const snap = await getDocs(q);
+    const snap = await this.safeGetDocs(q, ref);
     return snap.docs.map((doc: any) => ({ id: doc.id, ...this.convertDate(doc.data()) } as Education));
   }
 
@@ -425,7 +425,7 @@ export class FirestoreStorage implements IStorage {
   async getExperience(userId: string): Promise<Experience[]> {
     const ref = collection(db, "user_experience");
     const q = query(ref, where("userId", "==", userId));
-    const snap = await getDocs(q);
+    const snap = await this.safeGetDocs(q, ref);
     return snap.docs.map((doc: any) => ({ id: doc.id, ...this.convertDate(doc.data()) } as Experience));
   }
 
@@ -450,7 +450,7 @@ export class FirestoreStorage implements IStorage {
   async getProjects(userId: string): Promise<Project[]> {
     const ref = collection(db, "user_projects");
     const q = query(ref, where("userId", "==", userId));
-    const snap = await getDocs(q);
+    const snap = await this.safeGetDocs(q, ref);
     return snap.docs.map((doc: any) => ({ id: doc.id, ...this.convertDate(doc.data()) } as Project));
   }
 
@@ -475,7 +475,7 @@ export class FirestoreStorage implements IStorage {
   async getSkills(userId: string): Promise<Skill[]> {
     const ref = collection(db, "user_skills");
     const q = query(ref, where("userId", "==", userId));
-    const snap = await getDocs(q);
+    const snap = await this.safeGetDocs(q, ref);
     return snap.docs.map((doc: any) => ({ id: doc.id, ...this.convertDate(doc.data()) } as Skill));
   }
 
@@ -493,7 +493,7 @@ export class FirestoreStorage implements IStorage {
   async getCertifications(userId: string): Promise<Certification[]> {
     const ref = collection(db, "user_certifications");
     const q = query(ref, where("userId", "==", userId));
-    const snap = await getDocs(q);
+    const snap = await this.safeGetDocs(q, ref);
     return snap.docs.map((doc: any) => ({ id: doc.id, ...this.convertDate(doc.data()) } as Certification));
   }
 
@@ -518,7 +518,7 @@ export class FirestoreStorage implements IStorage {
   async getAchievements(userId: string): Promise<Achievement[]> {
     const ref = collection(db, "user_achievements");
     const q = query(ref, where("userId", "==", userId));
-    const snap = await getDocs(q);
+    const snap = await this.safeGetDocs(q, ref);
     return snap.docs.map((doc: any) => ({ id: doc.id, ...this.convertDate(doc.data()) } as Achievement));
   }
 
@@ -574,7 +574,7 @@ export class FirestoreStorage implements IStorage {
   async getJobSources(): Promise<JobSource[]> {
     const ref = collection(db, "job_sources");
     const q = query(ref, where("active", "==", true));
-    const snap = await getDocs(q);
+    const snap = await this.safeGetDocs(q, ref);
     return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as JobSource));
   }
 
@@ -623,7 +623,7 @@ export class FirestoreStorage implements IStorage {
   async unsaveJob(userId: string, jobId: string): Promise<void> {
     const ref = collection(db, "saved_jobs");
     const q = query(ref, where("userId", "==", userId), where("jobId", "==", jobId));
-    const snap = await getDocs(q);
+    const snap = await this.safeGetDocs(q, ref);
     if (!snap.empty) {
       await deleteDoc(doc(db, "saved_jobs", snap.docs[0].id));
     }
